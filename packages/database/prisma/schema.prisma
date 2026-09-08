@@ -187,6 +187,13 @@ model RouteStep {
   workCenterId String
   title String
   position Int
+  canvasX Float?
+  canvasY Float?
+  material String?
+  quantity Float?
+  unit String?
+  comment String?
+  components Json @default("[]")
   route Route @relation(fields:[routeId], references:[id], onDelete:Cascade)
   workCenter WorkCenter @relation(fields:[workCenterId], references:[id])
   predecessors RouteStepDependency[] @relation("successor")

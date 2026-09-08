@@ -1,0 +1,87 @@
+import assert from 'node:assert/strict';
+import {join} from 'node:path';
+export async function verifyMirror({page,prisma,request,cookie,check,root}) {
+  const names=['Пила','Лазер','Фрезер ЧПУ','Гибка','Сварка','Шлифовка ручная','Малярка','Слесарка','ОТК'];
+  for(const name of names)await prisma.workCenter.create({data:{name}});
+  const created=await request('/orders',cookie,{productionOrderNumber:'TEST-MIRROR',organization:'LATUNING',drawingApprovalDate:'2026-09-08',productionLeadDays:20,items:[{name:'Зеркало',quantity:1,unitPrice:1000}]});
+  assert.equal(created.status,201);const item=created.data.items[0];
+  await page.setViewportSize({width:1800,height:1100});await page.reload();
+  await page.getByRole('button',{name:'Запуски',exact:true}).click();
+  await page.getByLabel('Поиск заказов для планирования',{exact:true}).fill('TEST-MIRROR');
+  await page.getByText('Зеркало',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Создать',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Конструктор маршрута',exact:true});
+  await dialog.getByLabel('Название маршрута',{exact:true}).fill('Зеркало — параллельные ветки');
+  const ids=[];
+  for(const [i,name] of names.entries()){
+    await dialog.getByRole('button',{name,exact:true}).click();
+    ids.push(await dialog.locator('.react-flow__node').last().getAttribute('data-id'));
+    await dialog.getByLabel('Наименование операции',{exact:true}).fill(`Операция ${name}`);
+    await dialog.getByLabel('Материал',{exact:true}).fill(`Материал ${i+1}`);
+    await dialog.getByLabel('Количество',{exact:true}).fill(String(i+1));
+    await dialog.getByLabel('Единица измерения',{exact:true}).fill('шт.');
+    await dialog.getByLabel('Комментарий',{exact:true}).fill(`Комментарий ${name}`);
+    const parts=i===0?[['рама','латунь'],['лист','латунь 2 мм'],['основание','МДФ 16 мм']]:[[`деталь ${i+1}`,`материал детали ${i+1}`]];
+    for(const [name,material] of parts){
+      await dialog.getByRole('button',{name:'Добавить составную деталь',exact:true}).click();
+      const part=dialog.locator('.graph-inspector fieldset').last();
+      await part.getByLabel('Наименование детали',{exact:true}).fill(name);
+      await part.getByLabel('Материал детали',{exact:true}).fill(material);
+      await part.getByLabel('Количество деталей',{exact:true}).fill('1');
+    }
+  }
+  await dialog.getByRole('button',{name:'Показать весь маршрут',exact:true}).click();
+  const links=[[1,3],[0,4],[3,4],[4,5],[5,6],[6,7],[2,7],[7,8]];
+  const sourceHandle=await dialog.locator(`.react-flow__node[data-id="${ids[1]}"] .source`).boundingBox();
+  const targetHandle=await dialog.locator(`.react-flow__node[data-id="${ids[3]}"] .target`).boundingBox();
+  await page.mouse.move(sourceHandle.x+sourceHandle.width/2,sourceHandle.y+sourceHandle.height/2);await page.mouse.down();await page.mouse.move(targetHandle.x+targetHandle.width/2,targetHandle.y+targetHandle.height/2,{steps:15});await page.mouse.up();
+  await page.waitForTimeout(150);
+  check(await dialog.locator('.react-flow__edge').count()===1,'Graph connects two blocks by dragging their handles');
+  for(const [source,target] of links.slice(1)){
+    await dialog.locator(`.react-flow__node[data-id="${ids[source]}"]`).click();
+    await dialog.getByLabel('Следующий блок',{exact:true}).selectOption(ids[target]);
+    await dialog.getByRole('button',{name:'Добавить связь',exact:true}).click();
+  }
+  // A reversed link must not turn the DAG into a cycle.
+  await dialog.locator(`.react-flow__node[data-id="${ids[8]}"]`).click();
+  await dialog.getByLabel('Следующий блок',{exact:true}).selectOption(ids[0]);
+  await dialog.getByRole('button',{name:'Добавить связь',exact:true}).click();
+  await dialog.getByText('Эта связь создаёт цикл',{exact:true}).waitFor();
+  check(await dialog.locator('.react-flow__edge').count()===8,'Mirror graph prevents cycles without adding an edge');
+  await dialog.getByRole('button',{name:'Удалить связь',exact:true}).click();
+  check(await dialog.locator('.react-flow__edge').count()===7,'Graph deletes a selected connection');
+  await dialog.locator(`.react-flow__node[data-id="${ids[7]}"]`).click();await dialog.getByLabel('Следующий блок',{exact:true}).selectOption(ids[8]);await dialog.getByRole('button',{name:'Добавить связь',exact:true}).click();
+  await dialog.getByRole('button',{name:'ОТК',exact:true}).click();await dialog.getByRole('button',{name:'Удалить блок',exact:true}).click();
+  check(await dialog.locator('.react-flow__node').count()===9,'Removing an extra block preserves the mirror graph');
+  await dialog.getByRole('button',{name:'Выровнять схему',exact:true}).click();
+  await page.waitForTimeout(300);
+  await page.screenshot({path:join(root,'.local','mirror-route-graph.png'),fullPage:true});
+  await dialog.getByRole('button',{name:'Сохранить маршрут',exact:true}).click();await dialog.waitFor({state:'hidden'});
+  const saved=(await request(`/order-items/${item.id}/routes`,cookie)).data[0];
+  assert.equal(saved.steps.length,9);
+  const byName=new Map(saved.steps.map(s=>[s.workCenter.name,s]));
+  assert.deepEqual(saved.steps.filter(s=>s.predecessors.length===0).map(s=>s.workCenter.name).sort(),['Пила','Лазер','Фрезер ЧПУ'].sort());
+  for(const [source,target] of links)assert.ok(byName.get(names[target]).predecessors.some(e=>e.predecessorId===byName.get(names[source]).id));
+  check(true,'Mirror saves three parallel roots and the exact welding and assembly joins');
+  for(const [i,name] of names.entries()){const step=byName.get(name);assert.equal(step.material,`Материал ${i+1}`);assert.equal(step.quantity,i+1);assert.equal(step.components.length,i===0?3:1);assert.equal(step.unit,'шт.');}
+  assert.deepEqual(byName.get('Пила').components.map(p=>p.material),['латунь','латунь 2 мм','МДФ 16 мм']);
+  check(true,'All nine stages preserve quantities units materials and multiple components');
+  const boxes=saved.steps.map(s=>({x:s.canvasX,y:s.canvasY}));
+  for(let i=0;i<boxes.length;i++)for(let j=i+1;j<boxes.length;j++)assert.ok(Math.abs(boxes[i].x-boxes[j].x)>=240||Math.abs(boxes[i].y-boxes[j].y)>=190);
+  check(true,'Automatic graph layout produces non-overlapping blocks');
+  await page.reload();await page.getByRole('button',{name:'Запуски',exact:true}).click();await page.getByLabel('Поиск заказов для планирования',{exact:true}).fill('TEST-MIRROR');await page.getByText('Зеркало',{exact:true}).waitFor();
+  await page.locator('.item-check input').check();await page.getByLabel('Маршрут',{exact:true}).selectOption(saved.id);await page.getByRole('button',{name:'Изменить',exact:true}).click();
+  for(const [i,name] of names.entries()){
+    await dialog.locator(`.react-flow__node[data-id="${byName.get(name).id}"]`).click();
+    assert.equal(await dialog.getByLabel('Материал',{exact:true}).inputValue(),`Материал ${i+1}`);
+    assert.equal(await dialog.getByLabel('Количество',{exact:true}).inputValue(),String(i+1));
+    assert.equal(await dialog.getByLabel('Наименование операции',{exact:true}).inputValue(),`Операция ${name}`);
+    assert.equal(await dialog.getByLabel('Комментарий',{exact:true}).inputValue(),`Комментарий ${name}`);
+    assert.equal(await dialog.locator('.graph-inspector fieldset').count(),i===0?3:1);
+  }
+  check(true,'Reopened mirror graph displays saved details in every block');
+  await dialog.getByRole('button',{name:'Сохранить маршрут',exact:true}).click();await dialog.waitFor({state:'hidden'});
+  const versions=(await request(`/order-items/${item.id}/routes`,cookie)).data;
+  assert.equal(versions.length,2);assert.equal(versions[0].version,2);assert.equal(versions[1].id,saved.id);
+  check(true,'Graph edits retain previous route versions');
+}

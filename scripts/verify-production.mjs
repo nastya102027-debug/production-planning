@@ -153,7 +153,9 @@ try {
     await page.getByLabel("Название маршрута", { exact: true }).fill("Маршрут из браузера");
     const dialog = page.getByRole("dialog", { name: "Конструктор маршрута" });
     await dialog.getByRole("button", { name: centerA.name, exact: true }).click(); await dialog.getByRole("button", { name: centerB.name, exact: true }).click();
-    await dialog.getByRole("button", { name: "Поднять этап 2" }).click();
+    const firstNode=await dialog.locator(".react-flow__node").first().getAttribute("data-id");
+    await dialog.getByLabel("Следующий блок",{exact:true}).selectOption(firstNode);
+    await dialog.getByRole("button",{name:"Добавить связь",exact:true}).click();
     await dialog.getByRole("button", { name: "Сохранить маршрут" }).click();
     await dialog.waitFor({ state: "hidden" });
     check((await request(`/order-items/${uiItem.id}/routes`, cookie)).data[0].steps[0].workCenter.id === centerB.id, "Browser route reorder persists chosen stage sequence");
@@ -210,6 +212,8 @@ try {
     await page.getByRole("button", { name: "Запуски", exact: true }).click();
     await page.getByRole("heading", { name: "Загрузка производственных участков" }).waitFor();
     check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "Mobile planning page fits viewport");
+    const {verifyMirror}=await import('./verify-mirror-browser.mjs');
+    await verifyMirror({page,prisma,request,cookie,check,root});
     check(errors.length === 0, "Browser has no uncaught JavaScript errors");
   }
   await prisma.user.update({ where: { id: employee.id }, data: { active: false } });

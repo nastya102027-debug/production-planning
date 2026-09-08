@@ -1,10 +1,11 @@
+import { parseGraph, routeDetails } from "./route-graph.js";
 import { Router, type Response } from "express";
 import { Prisma, type PrismaClient, type OperationStatus } from "@prisma/client";
 import { z } from "zod";
 import { ProductionError, validateSteps, nextStatus, elapsedSeconds, downtimeSeconds } from "./production-rules.js";
 
 const routeInput = z.object({ name: z.string().trim().min(1).max(200), steps: z.array(z.object({
-  title: z.string().trim().min(1).max(200), workCenterId: z.string().uuid(), predecessorIndexes: z.array(z.number().int().nonnegative()).default([])
+  ...routeDetails, title: z.string().trim().min(1).max(200), workCenterId: z.string().uuid(), predecessorIndexes: z.array(z.number().int().nonnegative()).default([])
 })).min(1).max(100) });
 const launchInput = z.object({
   number: z.string().trim().min(1).max(80), orderId: z.string().uuid(), priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]).default("NORMAL"),
@@ -40,7 +41,7 @@ export function productionRouter(prisma: PrismaClient) {
     res.json(await prisma.route.findMany({ where: { orderItemId: String(req.params.id), active: true }, include: routeInclude, orderBy: { version: "desc" } }));
   });
   router.post("/order-items/:id/routes", plannerOnly, async (req, res) => {
-    const input = routeInput.parse(req.body); validateSteps(input.steps);
+    const input = req.body && "nodes" in req.body ? parseGraph(req.body) : routeInput.parse(req.body); validateSteps(input.steps);
     const orderItemId = String(req.params.id);
     const route = await prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM "OrderItem" WHERE id = ${orderItemId} FOR UPDATE`;
@@ -51,7 +52,7 @@ export function productionRouter(prisma: PrismaClient) {
       const version = (await tx.route.aggregate({ where: { orderItemId }, _max: { version: true } }))._max.version ?? 0;
       const created = await tx.route.create({ data: { orderItemId, name: input.name, version: version + 1 } });
       const steps = [];
-      for (const [index, step] of input.steps.entries()) steps.push(await tx.routeStep.create({ data: { routeId: created.id, title: step.title, workCenterId: step.workCenterId, position: index + 1 } }));
+      for (const [index, step] of input.steps.entries()) steps.push(await tx.routeStep.create({ data: { routeId: created.id, title: step.title, workCenterId: step.workCenterId, position: index + 1, canvasX: step.canvasX, canvasY: step.canvasY, material: step.material, quantity: step.quantity, unit: step.unit, comment: step.comment, components: step.components } }));
       for (const [index, step] of input.steps.entries()) for (const predecessor of step.predecessorIndexes) await tx.routeStepDependency.create({ data: { predecessorId: steps[predecessor].id, successorId: steps[index].id } });
       await tx.auditLog.create({ data: { actorId: req.session!.sub, action: "ROUTE_CREATED", entityType: "Route", entityId: created.id, after: input } });
       return tx.route.findUniqueOrThrow({ where: { id: created.id }, include: routeInclude });

@@ -3,7 +3,24 @@
   "private": true,
   "type": "module",
   "version": "0.1.0",
-  "scripts": { "dev": "vite", "build": "tsc -b && vite build", "test": "vitest run" },
-  "dependencies": { "@vitejs/plugin-react": "latest", "vite": "latest", "typescript": "latest", "react": "latest", "react-dom": "latest", "lucide-react": "latest" },
-  "devDependencies": { "@types/react": "latest", "@types/react-dom": "latest", "vitest": "latest" }
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "^3.1.1",
+    "@vitejs/plugin-react": "latest",
+    "@xyflow/react": "^12.11.6",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "vitest": "latest"
+  }
 }
