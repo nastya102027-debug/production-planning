@@ -4,9 +4,12 @@ import cors from "cors";
 import helmet from "helmet";
 import jwt from "jsonwebtoken";
 import argon2 from "argon2";
-import { PrismaClient, UserRole } from "@prisma/client";
+import { PrismaClient, Prisma, UserRole } from "@prisma/client";
 import { z } from "zod";
 import { addWorkingDays, isDateOnly, parseDateOnly } from "./working-days.js";
+
+import { productionRouter } from "./production.js";
+import { ProductionError } from "./production-rules.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -22,9 +25,13 @@ app.use(cors({ origin: process.env.WEB_ORIGIN ?? "http://localhost:5173", creden
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
-function auth(req: Request, res: Response, next: NextFunction) {
-  try { req.session = jwt.verify(req.cookies.session ?? "", secret) as unknown as Session; next(); }
-  catch { res.status(401).json({ message: "Требуется вход" }); }
+async function auth(req: Request, res: Response, next: NextFunction) {
+  try {
+    const token = jwt.verify(req.cookies.session ?? "", secret) as unknown as Session;
+    const user = await prisma.user.findFirst({ where: { id: token.sub, active: true }, select: { id: true, role: true } });
+    if (!user) return res.status(401).json({ message: "Требуется вход" });
+    req.session = { sub: user.id, role: user.role }; next();
+  } catch { res.status(401).json({ message: "Требуется вход" }); }
 }
 function planner(req: Request, res: Response, next: NextFunction) {
   if (req.session?.role !== "PLANNER") return res.status(403).json({ message: "Недостаточно прав" });
@@ -50,10 +57,7 @@ app.get("/api/work-centers",auth,async(req,res)=>{
   if(req.session!.role==="PLANNER")return res.json(await prisma.workCenter.findMany({where:{active:true},orderBy:{name:"asc"}}));
   const links=await prisma.userWorkCenter.findMany({where:{userId:req.session!.sub},select:{workCenter:true}});res.json(links.map(x=>x.workCenter));
 });
-app.get("/api/operations",auth,async(req,res)=>{
-  const where=req.session!.role==="PLANNER"?{}:{workCenter:{users:{some:{userId:req.session!.sub}}}};
-  res.json(await prisma.operation.findMany({where,include:{workCenter:true,predecessors:{include:{predecessor:{select:{id:true,status:true}}}},launchItem:{include:{orderItem:{include:{order:true}}}}},orderBy:[{priority:"desc"},{dueDate:"asc"}],take:100}));
-});
+app.use("/api", auth, productionRouter(prisma));
 app.get("/api/planner/summary",auth,planner,async(_req,res)=>{
   const [orders,inProcurement,operations,stopped]=await Promise.all([
     prisma.order.count({where:{archivedAt:null}}),prisma.procurement.count({where:{status:{not:"READY"}}}),
@@ -212,7 +216,7 @@ app.post("/api/orders/:id/procurement", auth, planner, async (req, res) => {
       },
       include: { responsible: true, order: { include: { items: true } } }
     });
-    await tx.order.update({ where: { id: orderId }, data: { status: parsed.data.status === "READY" ? "READY_FOR_LAUNCH" : "PROCUREMENT" } });
+    await tx.order.updateMany({ where: { id: orderId, status: { in: ["DRAFT", "PROCUREMENT", "READY_FOR_LAUNCH"] } }, data: { status: parsed.data.status === "READY" ? "READY_FOR_LAUNCH" : "PROCUREMENT" } });
     await tx.auditLog.create({ data: { actorId: req.session!.sub, action: "PROCUREMENT_UPDATED", entityType: "Procurement", entityId: procurement.id, after: { orderId, status: procurement.status, expectedAt: procurement.expectedAt } } });
     return procurement;
   });
@@ -238,116 +242,17 @@ app.patch("/api/procurement/:id", auth, planner, async (req, res) => {
       },
       include: { responsible: true, order: { include: { items: true } } }
     });
-    if (data.status) await tx.order.update({ where: { id: current.orderId }, data: { status: data.status === "READY" ? "READY_FOR_LAUNCH" : "PROCUREMENT" } });
+    if (data.status) await tx.order.updateMany({ where: { id: current.orderId, status: { in: ["DRAFT", "PROCUREMENT", "READY_FOR_LAUNCH"] } }, data: { status: data.status === "READY" ? "READY_FOR_LAUNCH" : "PROCUREMENT" } });
     await tx.auditLog.create({ data: { actorId: req.session!.sub, action: "PROCUREMENT_UPDATED", entityType: "Procurement", entityId: current.id, after: data } });
     return updated;
   });
   res.json(presentProcurement(record));
 });
 
-const routeInput = z.object({
-  name: z.string().trim().min(1).max(200),
-  steps: z.array(z.object({
-    title: z.string().trim().min(1).max(200),
-    workCenterId: z.string().uuid(),
-    predecessorIndexes: z.array(z.number().int().nonnegative()).default([])
-  })).min(1).max(100)
+app.use((error:unknown,_req:Request,res:Response,_next:NextFunction)=>{
+  if (error instanceof ProductionError) return res.status(error.status).json({ message: error.message });
+  if (error instanceof z.ZodError) return res.status(400).json({ message: "Проверьте заполненные поля", fields: error.flatten() });
+  if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2002", "P2034"].includes(error.code)) return res.status(409).json({ message: "Данные уже изменены или номер занят. Обновите страницу и повторите действие" });
+  console.error(error); res.status(500).json({message:"Внутренняя ошибка сервера"});
 });
-
-app.get("/api/order-items/:id/routes", auth, planner, async (req, res) => {
-  res.json(await prisma.route.findMany({
-    where: { orderItemId: String(req.params.id), active: true },
-    include: { steps: { include: { workCenter: true, predecessors: true }, orderBy: { position: "asc" } } },
-    orderBy: { version: "desc" }
-  }));
-});
-
-app.post("/api/order-items/:id/routes", auth, planner, async (req, res) => {
-  const parsed = routeInput.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ message: "Проверьте маршрут", fields: parsed.error.flatten() });
-  const orderItemId = String(req.params.id);
-  const item = await prisma.orderItem.findUnique({ where: { id: orderItemId } });
-  if (!item) return res.status(404).json({ message: "Позиция заказа не найдена" });
-  const invalidDependency = parsed.data.steps.some((step, index) => step.predecessorIndexes.some(predecessor => predecessor >= index));
-  if (invalidDependency) return res.status(400).json({ message: "Шаг может зависеть только от предыдущих шагов маршрута" });
-  const centers = await prisma.workCenter.count({ where: { id: { in: [...new Set(parsed.data.steps.map(step => step.workCenterId))] }, active: true } });
-  if (centers !== new Set(parsed.data.steps.map(step => step.workCenterId)).size) return res.status(400).json({ message: "Один из участков не найден или отключён" });
-  const route = await prisma.$transaction(async tx => {
-    const version = (await tx.route.aggregate({ where: { orderItemId }, _max: { version: true } }))._max.version ?? 0;
-    const created = await tx.route.create({ data: { orderItemId, name: parsed.data.name, version: version + 1 } });
-    const steps = [];
-    for (let index=0; index<parsed.data.steps.length; index++) {
-      const input = parsed.data.steps[index];
-      steps.push(await tx.routeStep.create({ data: { routeId: created.id, title: input.title, workCenterId: input.workCenterId, position: index + 1 } }));
-    }
-    for (let index=0; index<parsed.data.steps.length; index++) {
-      for (const predecessorIndex of parsed.data.steps[index].predecessorIndexes) {
-        await tx.routeStepDependency.create({ data: { predecessorId: steps[predecessorIndex].id, successorId: steps[index].id } });
-      }
-    }
-    await tx.auditLog.create({ data: { actorId: req.session!.sub, action: "ROUTE_CREATED", entityType: "Route", entityId: created.id, after: { orderItemId, name: created.name, stepCount: steps.length } } });
-    return tx.route.findUniqueOrThrow({ where: { id: created.id }, include: { steps: { include: { workCenter: true, predecessors: true }, orderBy: { position: "asc" } } } });
-  });
-  res.status(201).json(route);
-});
-
-const launchInput = z.object({
-  number: z.string().trim().min(1).max(80),
-  orderId: z.string().uuid(),
-  priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]).default("NORMAL"),
-  plannedStart: z.string().datetime().optional(),
-  plannedFinish: z.string().datetime().optional(),
-  items: z.array(z.object({ orderItemId: z.string().uuid(), routeId: z.string().uuid(), quantity: z.number().int().positive() })).min(1).max(200)
-});
-
-app.get("/api/launches", auth, planner, async (_req, res) => {
-  res.json(await prisma.productionLaunch.findMany({
-    include: { order: true, items: { include: { orderItem: true, route: true, operations: { include: { workCenter: true, predecessors: { include: { predecessor: { select: { id: true, status: true } } } } } } } } },
-    orderBy: [{ plannedStart: "asc" }, { createdAt: "desc" }],
-    take: 100
-  }));
-});
-
-app.post("/api/launches", auth, planner, async (req, res) => {
-  const parsed = launchInput.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ message: "Проверьте данные запуска", fields: parsed.error.flatten() });
-  const input = parsed.data;
-  const duplicate = await prisma.productionLaunch.findUnique({ where: { number: input.number } });
-  if (duplicate) return res.status(409).json({ message: "Запуск с таким номером уже существует" });
-  const order = await prisma.order.findFirst({ where: { id: input.orderId, archivedAt: null }, include: { items: { include: { launchItems: true, routes: { where: { active: true }, include: { steps: { include: { predecessors: true }, orderBy: { position: "asc" } } } } } } } });
-  if (!order) return res.status(404).json({ message: "Заказ не найден" });
-  for (const requested of input.items) {
-    const item = order.items.find(current => current.id === requested.orderItemId);
-    if (!item) return res.status(400).json({ message: "Позиция не принадлежит выбранному заказу" });
-    const route = item.routes.find(current => current.id === requested.routeId);
-    if (!route) return res.status(400).json({ message: `Для позиции «${item.name}» выбран недоступный маршрут` });
-    const launched = item.launchItems.reduce((sum, current) => sum + current.quantity, 0);
-    if (launched + requested.quantity > item.quantity) return res.status(409).json({ message: `Для позиции «${item.name}» доступно к запуску: ${item.quantity - launched}` });
-  }
-  const launch = await prisma.$transaction(async tx => {
-    const created = await tx.productionLaunch.create({ data: { orderId: input.orderId, number: input.number, priority: input.priority, plannedStart: input.plannedStart ? new Date(input.plannedStart) : null, plannedFinish: input.plannedFinish ? new Date(input.plannedFinish) : null } });
-    for (const requested of input.items) {
-      const route = order.items.flatMap(item => item.routes).find(current => current.id === requested.routeId)!;
-      const launchItem = await tx.productionLaunchItem.create({ data: { launchId: created.id, orderItemId: requested.orderItemId, routeId: requested.routeId, quantity: requested.quantity } });
-      const operationByStepId = new Map<string, string>();
-      for (const step of route.steps) {
-        const operation = await tx.operation.create({ data: { launchItemId: launchItem.id, workCenterId: step.workCenterId, title: step.title, quantity: requested.quantity, priority: input.priority, dueDate: input.plannedFinish ? new Date(input.plannedFinish) : null } });
-        operationByStepId.set(step.id, operation.id);
-      }
-      for (const step of route.steps) {
-        for (const dependency of step.predecessors) {
-          const predecessorId = operationByStepId.get(dependency.predecessorId);
-          const successorId = operationByStepId.get(step.id);
-          if (predecessorId && successorId) await tx.operationDependency.create({ data: { predecessorId, successorId } });
-        }
-      }
-    }
-    await tx.order.update({ where: { id: input.orderId }, data: { status: "IN_PRODUCTION" } });
-    await tx.auditLog.create({ data: { actorId: req.session!.sub, action: "PRODUCTION_LAUNCH_CREATED", entityType: "ProductionLaunch", entityId: created.id, after: { orderId: input.orderId, number: created.number, itemCount: input.items.length } } });
-    return tx.productionLaunch.findUniqueOrThrow({ where: { id: created.id }, include: { order: true, items: { include: { orderItem: true, route: true, operations: { include: { workCenter: true, predecessors: { include: { predecessor: { select: { id: true, status: true } } } } } } } } } });
-  }, { isolationLevel: "Serializable" });
-  res.status(201).json(launch);
-});
-
-app.use((error:unknown,_req:Request,res:Response,_next:NextFunction)=>{console.error(error);res.status(500).json({message:"Внутренняя ошибка сервера"});});
 app.listen(Number(process.env.API_PORT??3000),()=>console.log(`API: http://localhost:${process.env.API_PORT??3000}`));

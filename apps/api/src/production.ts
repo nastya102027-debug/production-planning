@@ -1,0 +1,188 @@
+import { Router, type Response } from "express";
+import { Prisma, type PrismaClient, type OperationStatus } from "@prisma/client";
+import { z } from "zod";
+import { ProductionError, validateSteps, nextStatus, elapsedSeconds, downtimeSeconds } from "./production-rules.js";
+
+const routeInput = z.object({ name: z.string().trim().min(1).max(200), steps: z.array(z.object({
+  title: z.string().trim().min(1).max(200), workCenterId: z.string().uuid(), predecessorIndexes: z.array(z.number().int().nonnegative()).default([])
+})).min(1).max(100) });
+const launchInput = z.object({
+  number: z.string().trim().min(1).max(80), orderId: z.string().uuid(), priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]).default("NORMAL"),
+  plannedStart: z.string().datetime().optional(), plannedFinish: z.string().datetime().optional(),
+  items: z.array(z.object({ orderItemId: z.string().uuid(), routeId: z.string().uuid(), quantity: z.number().int().positive() })).min(1).max(200)
+});
+const routeInclude = { steps: { include: { workCenter: true, predecessors: true }, orderBy: { position: "asc" as const } } };
+const launchInclude = { order: true, items: { include: { orderItem: true, route: { include: routeInclude }, operations: { include: { workCenter: true, predecessors: { include: { predecessor: { select: { id: true, status: true } } } } } } } } };
+const operationInclude = {
+  workCenter: true, predecessors: { include: { predecessor: { select: { id: true, status: true, title: true } } } },
+  launchItem: { include: { launch: { select: { number: true, plannedStart: true } }, orderItem: { select: { id: true, name: true, comment: true, order: { select: { id: true, productionOrderNumber: true } } } } } },
+  timeEntries: true, statusHistory: { orderBy: { changedAt: "asc" as const }, include: { changedBy: { select: { firstName: true, lastName: true } } } }
+};
+
+export function productionRouter(prisma: PrismaClient) {
+  const router = Router();
+  const streams = new Set<{ res: Response; planner: boolean; centers: string[] }>();
+  function publish(centers: string[] = []) {
+    for (const stream of streams) if (stream.planner || stream.centers.some(id => centers.includes(id))) stream.res.write('event: changed\ndata: {}\n\n');
+  }
+  router.get("/events", async (req, res) => {
+    const links = await prisma.userWorkCenter.findMany({ where: { userId: req.session!.sub } });
+    res.setHeader("Content-Type", "text/event-stream"); res.setHeader("Cache-Control", "no-cache"); res.setHeader("Connection", "keep-alive"); res.flushHeaders();
+    const stream = { res, planner: req.session!.role === "PLANNER", centers: links.map(link => link.workCenterId) };
+    streams.add(stream); res.write('event: changed\ndata: {}\n\n');
+    const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 20000);
+    req.on("close", () => { clearInterval(heartbeat); streams.delete(stream); });
+  });
+  const plannerOnly = (req: any, _res: any, next: any) => { if (req.session.role !== "PLANNER") throw new ProductionError(403, "Недостаточно прав"); next(); };
+
+  router.get("/order-items/:id/routes", plannerOnly, async (req, res) => {
+    res.json(await prisma.route.findMany({ where: { orderItemId: String(req.params.id), active: true }, include: routeInclude, orderBy: { version: "desc" } }));
+  });
+  router.post("/order-items/:id/routes", plannerOnly, async (req, res) => {
+    const input = routeInput.parse(req.body); validateSteps(input.steps);
+    const orderItemId = String(req.params.id);
+    const route = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "OrderItem" WHERE id = ${orderItemId} FOR UPDATE`;
+      const item = await tx.orderItem.findFirst({ where: { id: orderItemId, order: { archivedAt: null } } });
+      if (!item) throw new ProductionError(404, "Позиция не найдена");
+      const ids = [...new Set(input.steps.map(step => step.workCenterId))];
+      if (await tx.workCenter.count({ where: { id: { in: ids }, active: true } }) !== ids.length) throw new ProductionError(400, "Участок не найден или отключён");
+      const version = (await tx.route.aggregate({ where: { orderItemId }, _max: { version: true } }))._max.version ?? 0;
+      const created = await tx.route.create({ data: { orderItemId, name: input.name, version: version + 1 } });
+      const steps = [];
+      for (const [index, step] of input.steps.entries()) steps.push(await tx.routeStep.create({ data: { routeId: created.id, title: step.title, workCenterId: step.workCenterId, position: index + 1 } }));
+      for (const [index, step] of input.steps.entries()) for (const predecessor of step.predecessorIndexes) await tx.routeStepDependency.create({ data: { predecessorId: steps[predecessor].id, successorId: steps[index].id } });
+      await tx.auditLog.create({ data: { actorId: req.session!.sub, action: "ROUTE_CREATED", entityType: "Route", entityId: created.id, after: input } });
+      return tx.route.findUniqueOrThrow({ where: { id: created.id }, include: routeInclude });
+    });
+    res.status(201).json(route);
+  });
+  router.get("/planning/orders", plannerOnly, async (req, res) => {
+    const query = z.object({ search: z.string().trim().max(100).default(""), page: z.coerce.number().int().min(1).default(1) }).parse(req.query);
+    const where: Prisma.OrderWhereInput = { archivedAt: null, ...(query.search ? { OR: [{ productionOrderNumber: { contains: query.search, mode: "insensitive" } }, { items: { some: { name: { contains: query.search, mode: "insensitive" } } } }] } : {}) };
+    const [items, total] = await prisma.$transaction([prisma.order.findMany({ where, include: { items: { include: { launchItems: { select: { quantity: true } } } } }, orderBy: { createdAt: "desc" }, skip: (query.page - 1) * 30, take: 30 }), prisma.order.count({ where })]);
+    res.json({ items: items.map(order => ({ ...order, items: order.items.map(item => ({ ...item, unitPrice: Number(item.unitPrice), launchedQuantity: item.launchItems.reduce((sum, launch) => sum + launch.quantity, 0), launchItems: undefined })) })), total });
+  });
+  router.get("/launches", plannerOnly, async (req, res) => {
+    const page = z.coerce.number().int().min(1).default(1).parse(req.query.page);
+    res.json(await prisma.productionLaunch.findMany({ include: launchInclude, orderBy: { createdAt: "desc" }, skip: (page - 1) * 30, take: 30 }));
+  });
+  router.post("/launches", plannerOnly, async (req, res) => {
+    const input = launchInput.parse(req.body);
+    if (new Set(input.items.map(item => item.orderItemId)).size !== input.items.length) throw new ProductionError(400, "Позиции запуска не должны повторяться");
+    if (input.plannedStart && input.plannedFinish && new Date(input.plannedFinish) < new Date(input.plannedStart)) throw new ProductionError(400, "Завершение не может быть раньше начала");
+    const launch = await prisma.$transaction(async tx => {
+      // All launches of one order serialize before reading the remaining quantity.
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${input.orderId} FOR UPDATE`;
+      const order = await tx.order.findFirst({ where: { id: input.orderId, archivedAt: null }, include: { items: { include: { launchItems: true, routes: { where: { active: true }, include: routeInclude } } } } });
+      if (!order) throw new ProductionError(404, "Заказ не найден");
+      for (const requested of input.items) {
+        const item = order.items.find(item => item.id === requested.orderItemId);
+        if (!item) throw new ProductionError(400, "Позиция не принадлежит заказу");
+        const route = item.routes.find(route => route.id === requested.routeId);
+        if (!route?.steps.length) throw new ProductionError(400, `Выберите маршрут позиции «${item.name}»`);
+        const remaining = item.quantity - item.launchItems.reduce((sum, launch) => sum + launch.quantity, 0);
+        if (requested.quantity > remaining) throw new ProductionError(409, `Для позиции «${item.name}» доступно: ${remaining}`);
+      }
+      const created = await tx.productionLaunch.create({ data: { orderId: input.orderId, number: input.number, priority: input.priority, plannedStart: input.plannedStart ? new Date(input.plannedStart) : null, plannedFinish: input.plannedFinish ? new Date(input.plannedFinish) : null } });
+      for (const requested of input.items) {
+        const item = order.items.find(item => item.id === requested.orderItemId)!;
+        const route = item.routes.find(route => route.id === requested.routeId)!;
+        const launchItem = await tx.productionLaunchItem.create({ data: { launchId: created.id, ...requested } });
+        const operationByStep = new Map<string, string>();
+        for (const step of route.steps) {
+          const operation = await tx.operation.create({ data: { launchItemId: launchItem.id, workCenterId: step.workCenterId, title: step.title, quantity: requested.quantity, priority: input.priority, dueDate: input.plannedFinish ? new Date(input.plannedFinish) : order.dueDate, comment: item.comment,
+            statusHistory: { create: { changedById: req.session!.sub, toStatus: "QUEUED" } } } });
+          operationByStep.set(step.id, operation.id);
+        }
+        for (const step of route.steps) for (const dependency of step.predecessors) await tx.operationDependency.create({ data: { predecessorId: operationByStep.get(dependency.predecessorId)!, successorId: operationByStep.get(step.id)! } });
+        await tx.orderItem.update({ where: { id: item.id }, data: { status: item.completedQuantity ? "PARTIALLY_READY" : "IN_PRODUCTION" } });
+      }
+      await tx.order.update({ where: { id: order.id }, data: { status: order.items.some(item => item.completedQuantity) ? "PARTIALLY_READY" : "IN_PRODUCTION" } });
+      await tx.auditLog.create({ data: { actorId: req.session!.sub, action: "PRODUCTION_LAUNCH_CREATED", entityType: "ProductionLaunch", entityId: created.id, after: input } });
+      return tx.productionLaunch.findUniqueOrThrow({ where: { id: created.id }, include: launchInclude });
+    }, { timeout: 20000 });
+    publish(launch.items.flatMap(item => item.operations.map(operation => operation.workCenterId)));
+    res.status(201).json(launch);
+  });
+
+  function presentOperation(operation: Prisma.OperationGetPayload<{ include: typeof operationInclude }>) {
+    const now = new Date();
+    return { id: operation.id, title: operation.title, quantity: operation.quantity, status: operation.status, priority: operation.priority, dueDate: operation.dueDate,
+      comment: operation.comment, stopReason: operation.stopReason, workCenter: { id: operation.workCenter.id, name: operation.workCenter.name },
+      orderNumber: operation.launchItem.orderItem.order.productionOrderNumber, itemName: operation.launchItem.orderItem.name, launchNumber: operation.launchItem.launch.number,
+      plannedStart: operation.launchItem.launch.plannedStart, predecessors: operation.predecessors.map(link => link.predecessor),
+      workSeconds: elapsedSeconds(operation.timeEntries, now), downtimeSeconds: downtimeSeconds(operation.statusHistory, now), serverNow: now.toISOString(),
+      history: operation.statusHistory.map(event => ({ id: event.id, status: event.toStatus, reason: event.reason, at: event.changedAt, actor: `${event.changedBy.lastName} ${event.changedBy.firstName}` })) };
+  }
+  router.get("/operations", async (req, res) => {
+    const query = z.object({ workCenterId: z.string().uuid().optional(), status: z.enum(["QUEUED", "IN_PROGRESS", "PAUSED", "COMPLETED"]).optional(), search: z.string().trim().max(100).default(""), page: z.coerce.number().int().min(1).default(1) }).parse(req.query);
+    const where: Prisma.OperationWhereInput = {
+      ...(req.session!.role === "PLANNER" ? {} : { workCenter: { users: { some: { userId: req.session!.sub } } } }),
+      ...(query.workCenterId ? { workCenterId: query.workCenterId } : {}), ...(query.status ? { status: query.status } : { status: { not: "CANCELLED" } }),
+      ...(query.search ? { OR: [{ launchItem: { orderItem: { name: { contains: query.search, mode: "insensitive" } } } }, { launchItem: { orderItem: { order: { productionOrderNumber: { contains: query.search, mode: "insensitive" } } } } }, { launchItem: { launch: { number: { contains: query.search, mode: "insensitive" } } } }] } : {})
+    };
+    const [items, total, groups] = await prisma.$transaction([prisma.operation.findMany({ where, include: operationInclude, orderBy: [{ priority: "desc" }, { dueDate: "asc" }, { id: "asc" }], skip: (query.page - 1) * 40, take: 40 }), prisma.operation.count({ where }), prisma.operation.groupBy({ by: ["status"], where, orderBy: { status: "asc" }, _count: true })]);
+    res.json({ items: items.map(presentOperation), total, counts: Object.fromEntries(groups.map(group => [group.status, group._count])) });
+  });
+  router.get("/operations/:id", async (req, res) => {
+    const operation = await prisma.operation.findFirst({ where: { id: String(req.params.id), ...(req.session!.role === "PLANNER" ? {} : { workCenter: { users: { some: { userId: req.session!.sub } } } }) }, include: operationInclude });
+    if (!operation) throw new ProductionError(404, "Задача не найдена");
+    res.json(presentOperation(operation));
+  });
+  router.get("/planning/centers", plannerOnly, async (_req, res) => {
+    const [centers, counts] = await prisma.$transaction([prisma.workCenter.findMany({ where: { active: true }, orderBy: { name: "asc" } }), prisma.operation.groupBy({ by: ["workCenterId", "status"], orderBy: { workCenterId: "asc" }, _count: true })]);
+    res.json(centers.map(center => ({ ...center, counts: Object.fromEntries(counts.filter(row => row.workCenterId === center.id).map(row => [row.status, row._count])) })));
+  });
+  router.post("/operations/:id/actions", async (req, res) => {
+    const input = z.object({ action: z.enum(["start", "pause", "resume", "complete", "comment", "problem"]), reason: z.string().trim().max(1000).optional(), comment: z.string().trim().max(2000).optional() }).parse(req.body);
+    const operationId = String(req.params.id), userId = req.session!.sub;
+    const operation = await prisma.$transaction(async tx => {
+      const initial = await tx.operation.findUnique({ where: { id: operationId }, select: { launchItem: { select: { orderItem: { select: { orderId: true } } } } } });
+      if (!initial) throw new ProductionError(404, "Задача не найдена");
+      // Share the order lock with launch creation and completion rollups.
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${initial.launchItem.orderItem.orderId} FOR UPDATE`;
+      const current = await tx.operation.findFirst({ where: { id: operationId, ...(req.session!.role === "PLANNER" ? {} : { workCenter: { users: { some: { userId } } } }) }, include: operationInclude });
+      if (!current) throw new ProductionError(404, "Задача не найдена");
+      const now = new Date();
+      const note = [input.reason, input.comment].filter(Boolean).join("\n");
+      if (["comment", "problem"].includes(input.action)) {
+        if (!note) throw new ProductionError(400, "Введите комментарий");
+        await tx.operationStatusHistory.create({ data: { operationId, changedById: userId, fromStatus: current.status, toStatus: current.status, reason: `${input.action === "problem" ? "Проблема" : "Комментарий"}: ${note}`, changedAt: now } });
+      } else {
+        const status = nextStatus(current.status, input.action, current.predecessors.some(link => link.predecessor.status !== "COMPLETED"), input.reason) as OperationStatus;
+        await tx.operationTimeEntry.updateMany({ where: { operationId, finishedAt: null }, data: { finishedAt: now } });
+        if (status === "IN_PROGRESS") await tx.operationTimeEntry.create({ data: { operationId, userId, startedAt: now } });
+        await tx.operation.update({ where: { id: operationId }, data: { status, stopReason: status === "PAUSED" ? note : null, ...(status === "COMPLETED" ? { completedQuantity: current.quantity } : {}) } });
+        await tx.operationStatusHistory.create({ data: { operationId, changedById: userId, fromStatus: current.status, toStatus: status, reason: note || null, changedAt: now } });
+        if (status === "COMPLETED") {
+          const itemId = current.launchItem.orderItem.id;
+          const item = await tx.orderItem.findUniqueOrThrow({ where: { id: itemId }, include: { launchItems: { include: { operations: true } } } });
+          const completedQuantity = item.launchItems.filter(launch => launch.operations.length && launch.operations.every(task => task.status === "COMPLETED")).reduce((sum, launch) => sum + launch.quantity, 0);
+          await tx.orderItem.update({ where: { id: itemId }, data: { completedQuantity, status: completedQuantity === item.quantity ? "COMPLETED" : completedQuantity > 0 ? "PARTIALLY_READY" : "IN_PRODUCTION" } });
+          const items = await tx.orderItem.findMany({ where: { orderId: item.orderId } });
+          await tx.order.update({ where: { id: item.orderId }, data: { status: items.every(item => item.completedQuantity === item.quantity) ? "COMPLETED" : items.some(item => item.completedQuantity > 0) ? "PARTIALLY_READY" : "IN_PRODUCTION" } });
+        }
+      }
+      if (input.action === "pause" || input.action === "problem") {
+        const planners = await tx.user.findMany({ where: { role: "PLANNER", active: true }, select: { id: true } });
+        await tx.notification.create({ data: { type: input.action === "pause" ? "OPERATION_PAUSED" : "PROBLEM", title: `${current.workCenter.name} · заказ № ${current.launchItem.orderItem.order.productionOrderNumber}`, message: `${current.launchItem.orderItem.name}\n${note}`, entityType: "Operation", entityId: operationId, recipients: { create: planners.map(user => ({ userId: user.id })) } } });
+      }
+      await tx.auditLog.create({ data: { actorId: userId, action: `OPERATION_${input.action.toUpperCase()}`, entityType: "Operation", entityId: operationId, before: { status: current.status }, after: input } });
+      return tx.operation.findUniqueOrThrow({ where: { id: operationId }, include: operationInclude });
+    }, { timeout: 20000 });
+    const related = await prisma.operation.findMany({ where: { launchItemId: operation.launchItemId }, select: { workCenterId: true } });
+    publish(related.map(item => item.workCenterId)); res.json(presentOperation(operation));
+  });
+  router.get("/notifications", plannerOnly, async (req, res) => {
+    const page = z.coerce.number().int().min(1).default(1).parse(req.query.page);
+    const where = { userId: req.session!.sub };
+    const [items, unread, total] = await prisma.$transaction([prisma.notificationRecipient.findMany({ where, include: { notification: true }, orderBy: { notification: { createdAt: "desc" } }, skip: (page - 1) * 30, take: 30 }), prisma.notificationRecipient.count({ where: { ...where, readAt: null } }), prisma.notificationRecipient.count({ where })]);
+    res.json({ items, unread, total });
+  });
+  router.post("/notifications/:id/read", plannerOnly, async (req, res) => {
+    await prisma.notificationRecipient.updateMany({ where: { userId: req.session!.sub, notificationId: String(req.params.id), readAt: null }, data: { readAt: new Date() } });
+    publish(); res.sendStatus(204);
+  });
+  return router;
+}
