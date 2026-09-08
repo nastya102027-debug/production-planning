@@ -4,6 +4,7 @@ import { AlertTriangle, Boxes, ClipboardList, Factory, LogOut, PackageCheck, Plu
 import "./styles.css";
 import "./orders.css";
 import "./procurement.css";
+import { StaffScreen } from "./staff";
 import { PlanningScreen } from "./planning";
 import { OperationsScreen, Notifications } from "./operations";
 import { useProductionEvents } from "./production-api";
@@ -11,12 +12,12 @@ import { useProductionEvents } from "./production-api";
 type User = { firstName:string; lastName:string; role:"PLANNER"|"EMPLOYEE"; workCenters:{workCenter:{id:string;name:string}}[] };
 type Summary = { orders:number; inProcurement:number; operations:number; stopped:number };
 type Organization = "IP_VETROV"|"LATUNING"|"ECONTRID";
-type OrderItem = { id:string; name:string; quantity:number; completedQuantity:number; unitPrice:number; total:number };
-type Order = { id:string; productionOrderNumber:string; customerOrderNumber?:string; organization?:Organization; drawingApprovalDate?:string; productionLeadDays?:number; status:string; priority:string; dueDate?:string; items:OrderItem[]; total:number; completedTotal:number };
+type OrderItem = { comment?:string; id:string; name:string; quantity:number; completedQuantity:number; unitPrice:number; total:number };
+type Order = { updatedAt:string; archivedAt?:string; id:string; productionOrderNumber:string; customerOrderNumber?:string; organization?:Organization; drawingApprovalDate?:string; productionLeadDays?:number; status:string; priority:string; dueDate?:string; items:OrderItem[]; total:number; completedTotal:number };
 type Procurement = { id:string; status:string; startedAt:string; expectedAt?:string; readyAt?:string; deadlineState:string; comment?:string; responsible?:{id:string;firstName:string;lastName:string}; order:Order };
 type UserOption = { id:string; firstName:string; lastName:string; role:string };
-type DraftItem = { name:string; quantity:number|""; unitPrice:number };
-type Page = "overview"|"orders"|"procurement"|"launches"|"problems"|"centers";
+type DraftItem = { id?:string; comment?:string; name:string; quantity:number|""; unitPrice:number };
+type Page = "overview"|"orders"|"procurement"|"launches"|"problems"|"centers"|"staff";
 
 async function api<T>(path:string, init?:RequestInit):Promise<T> {
   const response = await fetch(`/api${path}`, { ...init, credentials:"include", headers:{"Content-Type":"application/json",...init?.headers} });
@@ -65,15 +66,15 @@ function PlannerOverview() {
 
 function EmptyPanel({eyebrow,title,icon:Icon,text}:{eyebrow:string;title:string;icon:typeof Factory;text:string}) { return <article className="panel"><div className="panel-title"><div><small>{eyebrow}</small><h2>{title}</h2></div></div><div className="empty"><Icon/><b>{text}</b><span>Данные появятся после создания рабочих задач</span></div></article>; }
 
-function OrderForm({onClose,onCreated}:{onClose:()=>void;onCreated:(order:Order)=>void}) {
-  const [productionOrderNumber,setProductionOrderNumber]=useState("");
-  const [customerOrderNumber,setCustomerOrderNumber]=useState("");
-  const [organization,setOrganization]=useState<Organization|"">("");
-  const [drawingApprovalDate,setDrawingApprovalDate]=useState("");
-  const [productionLeadDays,setProductionLeadDays]=useState<number|"">("");
-  const [priority,setPriority]=useState("NORMAL");
+function OrderForm({onClose,onCreated,existing}:{onClose:()=>void;onCreated:(order:Order)=>void;existing?:Order}) {
+  const [productionOrderNumber,setProductionOrderNumber]=useState(existing?.productionOrderNumber??"");
+  const [customerOrderNumber,setCustomerOrderNumber]=useState(existing?.customerOrderNumber??"");
+  const [organization,setOrganization]=useState<Organization|"">(existing?.organization??"");
+  const [drawingApprovalDate,setDrawingApprovalDate]=useState(existing?.drawingApprovalDate?.slice(0,10)??"");
+  const [productionLeadDays,setProductionLeadDays]=useState<number|"">(existing?.productionLeadDays??"");
+  const [priority,setPriority]=useState(existing?.priority??"NORMAL");
   const [error,setError]=useState("");
-  const [items,setItems]=useState<DraftItem[]>([{name:"",quantity:"",unitPrice:0}]);
+  const [items,setItems]=useState<DraftItem[]>(existing?.items.map(i=>({id:i.id,name:i.name,quantity:i.quantity,unitPrice:i.unitPrice,comment:i.comment}))??[{name:"",quantity:"",unitPrice:0}]);
   const total=items.reduce((sum,item)=>sum+(Number(item.quantity)||0)*(Number(item.unitPrice)||0),0);
   const dueDate=calculateDueDate(drawingApprovalDate,productionLeadDays);
   function patchItem(index:number, patch:Partial<DraftItem>) { setItems(current=>current.map((item,i)=>i===index?{...item,...patch}:item)); }
@@ -81,7 +82,8 @@ function OrderForm({onClose,onCreated}:{onClose:()=>void;onCreated:(order:Order)
     event.preventDefault();
     setError("");
     try {
-      const order=await api<Order>("/orders",{method:"POST",body:JSON.stringify({
+      const order=await api<Order>(existing?`/orders/${existing.id}`:"/orders",{method:existing?"PUT":"POST",body:JSON.stringify({
+        ...(existing?{updatedAt:existing.updatedAt}:{}),
         productionOrderNumber,
         customerOrderNumber:customerOrderNumber||undefined,
         organization,
@@ -97,7 +99,7 @@ function OrderForm({onClose,onCreated}:{onClose:()=>void;onCreated:(order:Order)
   }
   return <div className="modal-backdrop">
     <form className="order-form" onSubmit={submit}>
-      <div className="form-head"><div><small>НОВЫЙ ЗАКАЗ</small><h2>Создание заказа</h2></div><button type="button" className="close" onClick={onClose}><X/></button></div>
+      <div className="form-head"><div><small>{existing?"РЕДАКТИРОВАНИЕ":"НОВЫЙ ЗАКАЗ"}</small><h2>{existing?"Изменить заказ":"Создание заказа"}</h2></div><button type="button" className="close" onClick={onClose}><X/></button></div>
       <div className="form-grid order-identifiers">
         <label>Заказ на производство №<input value={productionOrderNumber} onChange={e=>setProductionOrderNumber(e.target.value)} required autoFocus/></label>
         <label>Заказ покупателя №<input value={customerOrderNumber} onChange={e=>setCustomerOrderNumber(e.target.value)}/></label>
@@ -121,30 +123,32 @@ function OrderForm({onClose,onCreated}:{onClose:()=>void;onCreated:(order:Order)
         <label>Количество, шт.<input type="number" min="1" value={item.quantity} onChange={e=>patchItem(index,{quantity:e.target.value?Number(e.target.value):""})} required/></label>
         <label>Цена за единицу, ₽<input type="number" min="0" step="0.01" value={item.unitPrice} onChange={e=>patchItem(index,{unitPrice:Number(e.target.value)})} required/></label>
         <strong>{money(Number(item.quantity)*item.unitPrice)}</strong>
-        {items.length>1&&<button type="button" className="remove" onClick={()=>setItems(items.filter((_,i)=>i!==index))}><X/></button>}
+        {items.length>1&&<button type="button" className="remove" onClick={()=>{if(!item.id||window.confirm("Удалить позицию из заказа?"))setItems(items.filter((_,i)=>i!==index));}}><X/></button>}
       </div>)}</div>
       {error&&<div className="error">{error}</div>}
-      <footer><div><span>Итого по заказу</span><strong>{money(total)}</strong></div><button type="button" className="secondary" onClick={onClose}>Отмена</button><button className="primary">Создать заказ</button></footer>
+      <footer><div><span>Итого по заказу</span><strong>{money(total)}</strong></div><button type="button" className="secondary" onClick={onClose}>Отмена</button><button className="primary">{existing?"Сохранить изменения":"Создать заказ"}</button></footer>
     </form>
   </div>;
 }
 
 function OrdersScreen() {
-  const [orders,setOrders]=useState<Order[]>([]); const [loading,setLoading]=useState(true); const [search,setSearch]=useState(""); const [showForm,setShowForm]=useState(false);
-  const load=()=>api<Order[]>(`/orders${search?`?search=${encodeURIComponent(search)}`:""}`).then(setOrders).finally(()=>setLoading(false));
-  useEffect(()=>{load();},[]);
+  const [orders,setOrders]=useState<Order[]>([]); const [loading,setLoading]=useState(true); const [search,setSearch]=useState(""); const [showForm,setShowForm]=useState(false); const [editing,setEditing]=useState<Order>(); const [archived,setArchived]=useState(false); const [error,setError]=useState("");
+  const load=()=>{setLoading(true);return api<Order[]>(`/orders?archived=${archived}&search=${encodeURIComponent(search)}`).then(setOrders).catch(e=>setError(e.message)).finally(()=>setLoading(false));};
+  async function archive(order:Order){if(!window.confirm(archived?"Вернуть заказ в работу?":"Переместить заказ в архив? Существующие производственные задачи продолжат выполняться."))return;try{await api(`/orders/${order.id}/archive`,{method:"PATCH",body:JSON.stringify({archived:!archived,updatedAt:order.updatedAt})});await load();}catch(e){setError(e instanceof Error?e.message:"Ошибка сохранения");}}
+  useEffect(()=>{void load();},[archived]);
   return <div className="content orders-page">
-    <div className="page-actions"><div><p className="kicker">ЗАКАЗЫ</p><h2>Портфель заказов</h2></div><div><label className="order-search"><Search/><input placeholder="Номер производства или покупателя" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load()}/></label><button className="primary" onClick={()=>setShowForm(true)}><Plus/> Новый заказ</button></div></div>
+    <div className="page-actions"><div><p className="kicker">ЗАКАЗЫ</p><h2>Портфель заказов</h2></div><div><label className="order-search"><Search/><input placeholder="Номер производства или покупателя" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load()}/></label><button className="primary" onClick={()=>{setEditing(undefined);setShowForm(true);}}><Plus/> Новый заказ</button></div></div>
+    <div className="page-actions"><button className="secondary" onClick={()=>setArchived(!archived)}>{archived?"Показать активные заказы":"Открыть архив"}</button><button className="secondary" onClick={()=>void load()}>Обновить список</button></div>{error&&<p className="error" role="alert">{error}</p>}
     <div className="order-table">
       <div className="order-row heading"><span>Заказ / организация</span><span>Срок</span><span>Статус</span><span>Позиции</span><span>Готово</span><span>Стоимость</span></div>
       {loading?<div className="table-empty">Загрузка…</div>:orders.length===0?<div className="table-empty"><ClipboardList/><b>Заказов пока нет</b><span>Создайте первый заказ вручную</span></div>:orders.map(order=><div className="order-row" key={order.id}>
         <span><b>Производство № {order.productionOrderNumber}</b><small>Заказ покупателя № {order.customerOrderNumber||"—"}</small>{order.organization&&<i className={`organization-badge org-${order.organization.toLowerCase()}`}>{organizationLabel[order.organization]}</i>}</span>
         <span><b>{displayDate(order.dueDate)}</b>{order.drawingApprovalDate&&<small>Согласовано: {displayDate(order.drawingApprovalDate)} · {order.productionLeadDays} раб. дн.</small>}</span>
         <span><i className={`status ${order.status.toLowerCase()}`}>{statusLabel[order.status]||order.status}</i><small>{priorityLabel[order.priority]}</small></span>
-        <span>{order.items.length}</span><span>{money(order.completedTotal)}</span><span><b>{money(order.total)}</b></span>
+        <span>{order.items.length}</span><span>{money(order.completedTotal)}</span><span><b>{money(order.total)}</b>{!archived&&<button className="secondary" onClick={()=>{setEditing(order);setShowForm(true);}}>Изменить</button>}<button className="secondary" onClick={()=>void archive(order)}>{archived?"Восстановить":"В архив"}</button></span>
       </div>)}
     </div>
-    {showForm&&<OrderForm onClose={()=>setShowForm(false)} onCreated={order=>{setOrders(current=>[order,...current]);setShowForm(false);}}/>}
+    {showForm&&<OrderForm existing={editing} onClose={()=>setShowForm(false)} onCreated={()=>{setShowForm(false);void load();}}/>}
   </div>;
 }
 
@@ -160,11 +164,11 @@ function ProcurementScreen() {
 
 function Shell({user,onLogout}:{user:User;onLogout:()=>void}) {
   const employee=user.role==="EMPLOYEE"; const [page,setPage]=useState<Page>("overview"); const [center,setCenter]=useState(""); const [focus,setFocus]=useState("");
-  const titles:Record<Page,string>={overview:employee?`Мой участок — ${user.workCenters[0]?.workCenter.name??"не назначен"}`:"Производство сегодня",orders:"Заказы",procurement:"Закупка",launches:"Производственные запуски",problems:"Уведомления Планеру",centers:"Производственные участки"};
+  const titles:Record<Page,string>={overview:employee?`Мой участок — ${user.workCenters[0]?.workCenter.name??"не назначен"}`:"Производство сегодня",orders:"Заказы",procurement:"Закупка",launches:"Производственные запуски",problems:"Уведомления Планеру",staff:"Сотрудники",centers:"Производственные участки"};
   const openCenter=(id:string)=>{setCenter(id);setFocus("");setPage("centers");};
   const openTask=(id:string)=>{setFocus(id);setCenter("");setPage(id?"centers":"problems");};
   const nav=(target:Page,Icon:typeof Factory,label:string)=><button className={page===target?"active":""} onClick={()=>{setPage(target);setCenter("");setFocus("");}}><Icon/> {label}</button>;
-  return <div className="shell"><aside><div className="logo"><span>К</span><b>КОНТУР</b></div><nav>{nav("overview",Factory,employee?"Мой участок":"Обзор")}{!employee&&<>{nav("orders",ClipboardList,"Заказы")}{nav("procurement",PackageCheck,"Закупка")}{nav("launches",Boxes,"Запуски")}{nav("centers",Factory,"Участки")}{nav("problems",AlertTriangle,"Уведомления")}</>}</nav><button className="logout" onClick={onLogout}><LogOut/> Выйти</button></aside><main><header><div><p>{employee?"РАБОЧЕЕ МЕСТО":"ЦЕНТР УПРАВЛЕНИЯ"}</p><h1>{titles[page]}</h1></div><div className="header-tools">{!employee&&<Notifications compact onOpen={openTask}/>}<span className="avatar">{user.firstName[0]}{user.lastName[0]}</span><div><b>{user.firstName} {user.lastName}</b><small>{employee?"Сотрудник участка":"Планер"}</small></div></div></header>{employee?<OperationsScreen/>:page==="orders"?<OrdersScreen/>:page==="procurement"?<ProcurementScreen/>:page==="overview"?<PlannerOverview/>:page==="launches"?<PlanningScreen onOpenCenter={openCenter}/>:page==="centers"?<OperationsScreen key={center} planner initialCenter={center} focusId={focus}/>:page==="problems"?<Notifications onOpen={openTask}/>:<div className="content"><EmptyPanel eyebrow="РАЗДЕЛ" title={titles[page]} icon={Factory} text="Раздел готовится"/></div>}</main></div>;
+  return <div className="shell"><aside><div className="logo"><span>К</span><b>КОНТУР</b></div><nav>{nav("overview",Factory,employee?"Мой участок":"Обзор")}{!employee&&<>{nav("orders",ClipboardList,"Заказы")}{nav("procurement",PackageCheck,"Закупка")}{nav("launches",Boxes,"Запуски")}{nav("centers",Factory,"Участки")}{nav("problems",AlertTriangle,"Уведомления")}{nav("staff",Factory,"Сотрудники")}</>}</nav><button className="logout" onClick={onLogout}><LogOut/> Выйти</button></aside><main><header><div><p>{employee?"РАБОЧЕЕ МЕСТО":"ЦЕНТР УПРАВЛЕНИЯ"}</p><h1>{titles[page]}</h1></div><div className="header-tools">{!employee&&<Notifications compact onOpen={openTask}/>}<span className="avatar">{user.firstName[0]}{user.lastName[0]}</span><div><b>{user.firstName} {user.lastName}</b><small>{employee?"Сотрудник участка":"Планер"}</small></div></div></header>{employee?<OperationsScreen/>:page==="staff"?<StaffScreen/>:page==="orders"?<OrdersScreen/>:page==="procurement"?<ProcurementScreen/>:page==="overview"?<PlannerOverview/>:page==="launches"?<PlanningScreen onOpenCenter={openCenter}/>:page==="centers"?<OperationsScreen key={center} planner initialCenter={center} focusId={focus}/>:page==="problems"?<Notifications onOpen={openTask}/>:<div className="content"><EmptyPanel eyebrow="РАЗДЕЛ" title={titles[page]} icon={Factory} text="Раздел готовится"/></div>}</main></div>;
 }
 
 function App() { const [user,setUser]=useState<User|null>(null); const [loading,setLoading]=useState(true); useEffect(()=>{api<User>("/me").then(setUser).catch(()=>{}).finally(()=>setLoading(false));},[]); if(loading)return <div className="splash">КОНТУР</div>; if(!user)return <Login onLogin={setUser}/>; return <Shell user={user} onLogout={async()=>{await api("/auth/logout",{method:"POST"});setUser(null);}}/>; }

@@ -12,6 +12,7 @@ import { addWorkingDays, isDateOnly, parseDateOnly } from "./working-days.js";
 
 import { productionRouter } from "./production.js";
 import { ProductionError } from "./production-rules.js";
+import { staffRouter } from "./staff.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -110,10 +111,10 @@ function presentOrder(order: any) {
 }
 
 app.get("/api/orders", auth, planner, async (req, res) => {
-  const query = z.object({ search: z.string().trim().max(100).optional() }).parse(req.query);
+  const query = z.object({ search: z.string().trim().max(100).optional(), archived: z.enum(["true", "false"]).optional() }).parse(req.query);
   const orders = await prisma.order.findMany({
     where: {
-      archivedAt: null,
+      archivedAt: query.archived === "true" ? { not: null } : null,
       ...(query.search ? { OR: [
         { productionOrderNumber: { contains: query.search, mode: "insensitive" } },
         { customerOrderNumber: { contains: query.search, mode: "insensitive" } },
@@ -167,6 +168,59 @@ app.post("/api/orders", auth, planner, async (req, res) => {
   res.status(201).json(presentOrder(order));
 });
 
+app.put("/api/orders/:id", auth, planner, async (req, res) => {
+  const input = createOrderInput.extend({ updatedAt: z.string().datetime(), items: z.array(orderItemInput.extend({ id: z.string().uuid().optional() })).min(1).max(200) }).parse(req.body);
+  const id = z.string().uuid().parse(req.params.id);
+  const order = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`;
+    const before = await tx.order.findFirst({ where: { id, archivedAt: null }, include: { items: { include: { launchItems: true, routes: true } }, launches: true } });
+    if (!before) throw new ProductionError(404, "Заказ не найден");
+    if (before.updatedAt.toISOString() !== input.updatedAt) throw new ProductionError(409, "Заказ изменён. Закройте форму и обновите список перед редактированием");
+    const ids = input.items.flatMap(item => item.id ? [item.id] : []);
+    if (new Set(ids).size !== ids.length || ids.some(itemId => !before.items.some(item => item.id === itemId))) throw new ProductionError(400, "Проверьте позиции заказа");
+    for (const item of before.items) {
+      const next = input.items.find(row => row.id === item.id);
+      const launched = item.launchItems.reduce((sum, row) => sum + row.quantity, 0);
+      if (!next && (item.routes.length || launched || item.completedQuantity)) throw new ProductionError(409, `Позиция «${item.name}» связана с маршрутом или запуском и не может быть удалена`);
+      if (next && next.quantity < Math.max(launched, item.completedQuantity)) throw new ProductionError(409, `Количество «${item.name}» не может быть меньше запущенного: ${Math.max(launched, item.completedQuantity)}`);
+      if (!next) await tx.orderItem.delete({ where: { id: item.id } });
+    }
+    for (const item of input.items) {
+      const data = { name: item.name, quantity: item.quantity, unitPrice: item.unitPrice, comment: item.comment ?? null };
+      if (item.id) await tx.orderItem.update({ where: { id: item.id }, data });
+      else await tx.orderItem.create({ data: { ...data, orderId: id } });
+    }
+    const drawingApprovalDate = parseDateOnly(input.drawingApprovalDate);
+    const dueDate = addWorkingDays(drawingApprovalDate, input.productionLeadDays);
+    const updated = await tx.order.update({ where: { id }, data: { productionOrderNumber: input.productionOrderNumber, customerOrderNumber: input.customerOrderNumber ?? null, organization: input.organization, priority: input.priority, drawingApprovalDate, productionLeadDays: input.productionLeadDays, dueDate, comment: input.comment ?? before.comment }, include: { items: true, procurement: true } });
+    // Only stages that inherited the order deadline follow changes to that deadline.
+    await tx.operation.updateMany({ where: { launchItem: { launch: { orderId: id, plannedFinish: null } }, status: { notIn: ["COMPLETED", "CANCELLED"] } }, data: { dueDate } });
+    if (updated.items.some(item => item.completedQuantity > 0)) {
+      updated.status = updated.items.every(item => item.completedQuantity >= item.quantity) ? "COMPLETED" : "PARTIALLY_READY";
+      const final = await tx.order.update({ where: { id }, data: { status: updated.status } });
+      updated.updatedAt = final.updatedAt;
+    }
+    await tx.auditLog.create({ data: { actorId: req.session!.sub, action: "ORDER_UPDATED", entityType: "Order", entityId: id, before: JSON.parse(JSON.stringify(before)), after: JSON.parse(JSON.stringify(updated)) } });
+    return updated;
+  });
+  res.json(presentOrder(order));
+});
+
+app.patch("/api/orders/:id/archive", auth, planner, async (req, res) => {
+  const id = z.string().uuid().parse(req.params.id);
+  const input = z.object({ archived: z.boolean(), updatedAt: z.string().datetime() }).parse(req.body);
+  const order = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`;
+    const before = await tx.order.findUnique({ where: { id } });
+    if (!before) throw new ProductionError(404, "Заказ не найден");
+    if (before.updatedAt.toISOString() !== input.updatedAt) throw new ProductionError(409, "Заказ изменён. Обновите список");
+    const updated = await tx.order.update({ where: { id }, data: { archivedAt: input.archived ? new Date() : null }, include: { items: true } });
+    await tx.auditLog.create({ data: { actorId: req.session!.sub, action: input.archived ? "ORDER_ARCHIVED" : "ORDER_RESTORED", entityType: "Order", entityId: id } });
+    return updated;
+  });
+  res.json(presentOrder(order));
+});
+
 const procurementInput = z.object({
   startedAt: z.string().datetime().optional(),
   expectedAt: z.string().datetime().optional(),
@@ -187,6 +241,7 @@ function presentProcurement(record: any) {
   return { ...record, order: presentOrder(record.order), deadlineState };
 }
 
+app.use("/api/staff", auth, planner, staffRouter(prisma));
 app.get("/api/users", auth, planner, async (_req, res) => {
   res.json(await prisma.user.findMany({ where: { active: true }, select: { id: true, firstName: true, lastName: true, role: true }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }] }));
 });

@@ -42,6 +42,24 @@ try {
   const login = await request("/auth/login", null, { login: "test-planner", password }), workerLogin = await request("/auth/login", null, { login: "test-employee", password });
   check(login.status === 200 && workerLogin.status === 200, "Both roles authenticate");
   const cookie = login.cookie, workerCookie = workerLogin.cookie;
+  const staffPassword = randomBytes(18).toString("hex");
+  const staffBody = { login: "managed-worker", firstName: "Новый", lastName: "Сотрудник", active: true, password: staffPassword, workCenterIds: [centerB.id] };
+  check((await request("/staff", workerCookie)).status === 403 && (await request("/staff", workerCookie, staffBody)).status === 403, "Employee cannot list or create accounts");
+  check((await request("/staff", cookie, { ...staffBody, workCenterIds: [] })).status === 400, "Active employee requires assigned center");
+  const managed = await request("/staff", cookie, staffBody);
+  check(managed.status === 201 && !JSON.stringify(managed.data).includes("password"), "Planner creates employee without exposing password fields");
+  check((await request("/staff", cookie, staffBody)).status === 409, "Duplicate employee login rejected");
+  const managedLogin = await request("/auth/login", null, { login: staffBody.login, password: staffPassword });
+  check(managedLogin.status === 200 && (await request("/work-centers", managedLogin.cookie)).data[0].id === centerB.id, "Created employee can log in and receives assigned center");
+  const { password: unusedPassword, ...staffUpdate } = staffBody;
+  check((await request(`/staff/${planner.id}`, cookie, staffUpdate, "PUT")).status === 404, "Employee management cannot modify planner account");
+  const newStaffPassword = randomBytes(18).toString("hex");
+  check((await request(`/staff/${managed.data.id}`, cookie, { ...staffUpdate, password: newStaffPassword, workCenterIds: [centerA.id] }, "PUT")).status === 200, "Planner updates password and assigned center");
+  check((await request("/auth/login", null, { login: staffBody.login, password: staffPassword })).status === 401 && (await request("/auth/login", null, { login: staffBody.login, password: newStaffPassword })).status === 200, "Only replacement employee password authenticates");
+  await request(`/staff/${managed.data.id}`, cookie, { ...staffUpdate, active: false }, "PUT");
+  check((await request("/me", managedLogin.cookie)).status === 401 && (await request("/auth/login", null, { login: staffBody.login, password: newStaffPassword })).status === 401, "Disabled employee loses existing session and login access");
+  const staffAudit = JSON.stringify(await prisma.auditLog.findMany({ where: { entityId: managed.data.id } }));
+  check(!staffAudit.includes(staffPassword) && !staffAudit.includes(newStaffPassword) && !staffAudit.includes("passwordHash"), "Account audit contains no secrets or password hashes");
   const createdOrder = await request("/orders", cookie, { productionOrderNumber: "TEST-100", organization: "LATUNING", drawingApprovalDate: "2026-09-08", productionLeadDays: 10, items: [{ name: "Тестовая деталь", quantity: 10, unitPrice: 100 }] });
   assert.equal(createdOrder.status, 201); const order = createdOrder.data, item = order.items[0];
   const routeBody = { name: "Параллельный маршрут", steps: [{ title: "Первый этап", workCenterId: centerA.id, predecessorIndexes: [] }, { title: "Ветка А", workCenterId: centerA.id, predecessorIndexes: [0] }, { title: "Ветка Б", workCenterId: centerB.id, predecessorIndexes: [0] }, { title: "Завершающий этап", workCenterId: centerA.id, predecessorIndexes: [1, 2] }] };
@@ -87,6 +105,18 @@ try {
   check(partial.data.status === "PARTIALLY_READY" && partial.data.items[0].completedQuantity === 4 && partial.data.completedTotal === 400, "Completion counts finished launch quantity once, not each route stage");
   const noOpenTime = await prisma.operationTimeEntry.count({ where: { operationId: first.id, finishedAt: null } });
   check(noOpenTime === 0, "Completed operation has no running time interval");
+  const editBody = { productionOrderNumber: "TEST-100", organization: "LATUNING", drawingApprovalDate: "2026-09-08", productionLeadDays: 12, updatedAt: partial.data.updatedAt, items: [{ id: item.id, name: "Уточнённая деталь", quantity: 10, unitPrice: 125 }] };
+  check((await request(`/orders/${order.id}`, workerCookie, editBody, "PUT")).status === 403, "Employee cannot edit order");
+  check((await request(`/orders/${order.id}`, cookie, { ...editBody, items: [{ ...editBody.items[0], quantity: 9 }] }, "PUT")).status === 409, "Order quantity cannot fall below launched quantity");
+  const edited = await request(`/orders/${order.id}`, cookie, editBody, "PUT");
+  check(edited.status === 200 && edited.data.total === 1250 && edited.data.completedTotal === 500, "Order edit recalculates total and completed value");
+  check((await request(`/orders/${order.id}`, cookie, editBody, "PUT")).status === 409, "Stale order edits cannot overwrite newer changes");
+  const archiveBody = { archived: true, updatedAt: edited.data.updatedAt };
+  check((await request(`/orders/${order.id}/archive`, workerCookie, archiveBody, "PATCH")).status === 403, "Employee cannot archive order");
+  const archivedOrder = await request(`/orders/${order.id}/archive`, cookie, archiveBody, "PATCH");
+  check(archivedOrder.status === 200 && !(await request("/orders", cookie)).data.some(row => row.id === order.id) && (await request("/orders?archived=true", cookie)).data.some(row => row.id === order.id), "Archived orders appear only in archive list");
+  check((await request("/launches", cookie, { ...body, number: "ARCHIVED-LAUNCH" })).status === 404, "Archived orders cannot be launched");
+  check((await request(`/orders/${order.id}/archive`, cookie, { archived: false, updatedAt: archivedOrder.data.updatedAt }, "PATCH")).status === 200, "Planner can restore archived order");
 
   if (process.argv.includes("--browser")) {
     const uiOrder = await request("/orders", cookie, { productionOrderNumber: "TEST-UI", organization: "LATUNING", drawingApprovalDate: "2026-09-08", productionLeadDays: 10, items: [{ name: "Деталь для проверки интерфейса", quantity: 5, unitPrice: 100 }] });
