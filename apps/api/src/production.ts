@@ -14,6 +14,7 @@ const launchInput = z.object({
 const routeInclude = { steps: { include: { workCenter: true, predecessors: true }, orderBy: { position: "asc" as const } } };
 const launchInclude = { order: true, items: { include: { orderItem: true, route: { include: routeInclude }, operations: { include: { workCenter: true, predecessors: { include: { predecessor: { select: { id: true, status: true } } } } } } } } };
 const operationInclude = {
+  assignee: { select: { id: true, firstName: true, lastName: true, active: true } },
   workCenter: true, predecessors: { include: { predecessor: { select: { id: true, status: true, title: true } } } },
   launchItem: { include: { launch: { select: { number: true, plannedStart: true } }, orderItem: { select: { id: true, name: true, comment: true, order: { select: { id: true, productionOrderNumber: true } } } } } },
   timeEntries: true, statusHistory: { orderBy: { changedAt: "asc" as const }, include: { changedBy: { select: { firstName: true, lastName: true } } } }
@@ -109,7 +110,7 @@ export function productionRouter(prisma: PrismaClient) {
   function presentOperation(operation: Prisma.OperationGetPayload<{ include: typeof operationInclude }>) {
     const now = new Date();
     return { id: operation.id, title: operation.title, quantity: operation.quantity, status: operation.status, priority: operation.priority,
-      comment: operation.comment, stopReason: operation.stopReason, workCenter: { id: operation.workCenter.id, name: operation.workCenter.name },
+      comment: operation.comment, stopReason: operation.stopReason, assignee: operation.assignee, workCenter: { id: operation.workCenter.id, name: operation.workCenter.name },
       orderNumber: operation.launchItem.orderItem.order.productionOrderNumber, itemName: operation.launchItem.orderItem.name, launchNumber: operation.launchItem.launch.number,
       plannedStart: operation.plannedStart ?? operation.launchItem.launch.plannedStart, stagePlannedStart: operation.plannedStart, plannedFinish: operation.plannedFinish, queueOrder: operation.queueOrder, planVersion: operation.planVersion, dueDate: operation.plannedFinish ?? operation.dueDate, predecessors: operation.predecessors.map(link => link.predecessor),
       workSeconds: elapsedSeconds(operation.timeEntries, now), downtimeSeconds: downtimeSeconds(operation.statusHistory, now), serverNow: now.toISOString(),
@@ -130,20 +131,26 @@ export function productionRouter(prisma: PrismaClient) {
     if (!operation) throw new ProductionError(404, "Задача не найдена");
     res.json(presentOperation(operation));
   });
+  router.get("/operations/:id/assignees", plannerOnly, async (req, res) => {
+    const operation = await prisma.operation.findUnique({ where: { id: z.string().uuid().parse(req.params.id) }, select: { workCenterId: true } });
+    if (!operation) throw new ProductionError(404, "Задача не найдена");
+    res.json(await prisma.user.findMany({ where: { role: "EMPLOYEE", active: true, workCenters: { some: { workCenterId: operation.workCenterId } } }, select: { id: true, firstName: true, lastName: true }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }] }));
+  });
   router.patch("/operations/:id/plan", plannerOnly, async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
-    const input = z.object({ priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]), queueOrder: z.number().int().min(-1000000).max(1000000), plannedStart: z.string().datetime().nullable(), plannedFinish: z.string().datetime().nullable(), planVersion: z.number().int().nonnegative() }).strict().parse(req.body);
+    const input = z.object({ priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]), queueOrder: z.number().int().min(-1000000).max(1000000), plannedStart: z.string().datetime().nullable(), plannedFinish: z.string().datetime().nullable(), planVersion: z.number().int().nonnegative(), assigneeId: z.string().uuid().nullable().optional() }).strict().parse(req.body);
     const operation = await prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM "Operation" WHERE id = ${id} FOR UPDATE`;
       const before = await tx.operation.findUnique({ where: { id }, include: operationInclude });
       if (!before) throw new ProductionError(404, "Задача не найдена");
       if (["COMPLETED", "CANCELLED"].includes(before.status)) throw new ProductionError(409, "Планирование завершённой задачи недоступно");
       if (before.planVersion !== input.planVersion) throw new ProductionError(409, "План уже изменён. Закройте форму и откройте задачу заново");
+      if (input.assigneeId && !await tx.user.findFirst({ where: { id: input.assigneeId, role: "EMPLOYEE", active: true, workCenters: { some: { workCenterId: before.workCenterId } } } })) throw new ProductionError(400, "Выберите действующего сотрудника этого участка");
       const start = input.plannedStart ? new Date(input.plannedStart) : before.launchItem.launch.plannedStart;
       const finish = input.plannedFinish ? new Date(input.plannedFinish) : before.dueDate;
       if (start && finish && start > finish) throw new ProductionError(400, "Плановое завершение не может быть раньше начала");
-      const updated = await tx.operation.update({ where: { id }, data: { priority: input.priority, queueOrder: input.queueOrder, plannedStart: input.plannedStart, plannedFinish: input.plannedFinish, planVersion: { increment: 1 } }, include: operationInclude });
-      await tx.auditLog.create({ data: { actorId: req.session!.sub, entityType: "Operation", entityId: id, action: "OPERATION_PLAN_UPDATED", before: { priority: before.priority, queueOrder: before.queueOrder, plannedStart: before.plannedStart?.toISOString() ?? null, plannedFinish: before.plannedFinish?.toISOString() ?? null }, after: input } });
+      const updated = await tx.operation.update({ where: { id }, data: { ...(input.assigneeId !== undefined ? { assigneeId: input.assigneeId } : {}), priority: input.priority, queueOrder: input.queueOrder, plannedStart: input.plannedStart, plannedFinish: input.plannedFinish, planVersion: { increment: 1 } }, include: operationInclude });
+      await tx.auditLog.create({ data: { actorId: req.session!.sub, entityType: "Operation", entityId: id, action: "OPERATION_PLAN_UPDATED", before: { assigneeId: before.assigneeId, priority: before.priority, queueOrder: before.queueOrder, plannedStart: before.plannedStart?.toISOString() ?? null, plannedFinish: before.plannedFinish?.toISOString() ?? null }, after: input } });
       return updated;
     });
     publish([operation.workCenterId]);

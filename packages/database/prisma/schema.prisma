@@ -64,6 +64,7 @@ model User {
   statusChanges OperationStatusHistory[]
   notifications NotificationRecipient[]
   responsibleProcurements Procurement[]
+  assignedOperations Operation[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -215,6 +216,8 @@ model Operation {
   plannedFinish DateTime?
   queueOrder Int @default(0)
   planVersion Int @default(0)
+  assigneeId String?
+  assignee User? @relation(fields:[assigneeId], references:[id], onDelete:SetNull)
   comment String?
   stopReason String?
   launchItem ProductionLaunchItem @relation(fields:[launchItemId], references:[id], onDelete:Cascade)
@@ -224,6 +227,7 @@ model Operation {
   predecessors OperationDependency[] @relation("operationSuccessor")
   successors OperationDependency[] @relation("operationPredecessor")
   @@index([workCenterId, status, dueDate])
+  @@index([assigneeId, status])
 }
 
 model OperationDependency {
