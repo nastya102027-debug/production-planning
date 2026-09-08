@@ -1,0 +1,6 @@
+{
+  "name": "@production/database",
+  "private": true,
+  "version": "0.1.0",
+  "dependencies": { "@prisma/client": "6.12.0" }
+}

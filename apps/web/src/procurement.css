@@ -1,0 +1,25 @@
+.procurement-add {
+  display: grid; grid-template-columns: 1.4fr 1fr 1.2fr auto; align-items: end;
+  gap: 12px; padding: 18px; margin-bottom: 16px; background: #fff; border: 1px solid #dfe4e0;
+}
+.procurement-add label { display: grid; gap: 6px; color: #56625b; font-size: 11px; font-weight: 800; }
+.procurement-add input, .procurement-add select, .procurement-card select { height: 40px; padding: 7px 9px; border: 1px solid #cbd2cd; border-radius: 3px; background: #fff; }
+.procurement-list { display: grid; gap: 9px; }
+.procurement-list > .table-empty { background: #fff; border: 1px solid #dfe4e0; }
+.procurement-card { display: grid; grid-template-columns: 1fr 1.1fr 1.3fr auto 160px; align-items: center; gap: 18px; min-height: 92px; padding: 15px 18px; background: #fff; border: 1px solid #dfe4e0; border-left: 4px solid #7a867f; }
+.procurement-card > div { display: grid; gap: 3px; }
+.procurement-card small { color: #8a938e; font-size: 9px; font-weight: 900; letter-spacing: .1em; }
+.procurement-card h3 { margin: 0; font-size: 17px; }
+.procurement-card span { color: #758079; font-size: 11px; }
+.deadline { padding: 6px 9px; border-radius: 3px; background: #edf0ed; color: #59665e; font-size: 10px; font-style: normal; font-weight: 900; text-transform: uppercase; white-space: nowrap; }
+.deadline.overdue, .deadline.late_for_order { background: #fae5e1; color: #a33829; }
+.deadline.ready { background: #e4f2e8; color: #286a40; }
+.deadline.scheduled { background: #e7f0ec; color: #2c6d54; }
+@media (max-width: 1050px) {
+  .procurement-add { grid-template-columns: 1fr 1fr; }
+  .procurement-card { grid-template-columns: 1fr 1fr; }
+  .procurement-card select { width: 100%; }
+}
+@media (max-width: 600px) {
+  .procurement-add, .procurement-card { grid-template-columns: 1fr; }
+}

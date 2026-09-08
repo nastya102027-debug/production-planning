@@ -1,0 +1,56 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
+*.log
+.vite/
+coverage/
+*.tsbuildinfo
+.local/
+.tools/
+
+# Local database and runtime data
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.db-wal
+*.db-shm
+*.dump
+*.backup
+postgres-data/
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Editors and operating system
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local credentials, archives and temporary files
+.codex/
+.agents/
+.ssh/
+.npmrc
+.netrc
+.git-credentials
+credentials.json
+auth.json
+*.zip
+*.7z
+*.tmp
+*.bak
+tmp/
+temp/

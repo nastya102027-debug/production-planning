@@ -1,0 +1,291 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  PLANNER
+  EMPLOYEE
+}
+
+enum OrderStatus {
+  DRAFT
+  PROCUREMENT
+  READY_FOR_LAUNCH
+  IN_PRODUCTION
+  PARTIALLY_READY
+  COMPLETED
+  ARCHIVED
+}
+
+enum ProcurementStatus {
+  NOT_REQUIRED
+  WAITING
+  ORDERED
+  PARTIALLY_RECEIVED
+  READY
+}
+
+enum OperationStatus {
+  QUEUED
+  IN_PROGRESS
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+enum Organization {
+  IP_VETROV
+  LATUNING
+  ECONTRID
+}
+
+model User {
+  id String @id @default(uuid())
+  login String @unique
+  passwordHash String
+  firstName String
+  lastName String
+  role UserRole
+  active Boolean @default(true)
+  workCenters UserWorkCenter[]
+  timeEntries OperationTimeEntry[]
+  statusChanges OperationStatusHistory[]
+  notifications NotificationRecipient[]
+  responsibleProcurements Procurement[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WorkCenter {
+  id String @id @default(uuid())
+  name String @unique
+  active Boolean @default(true)
+  users UserWorkCenter[]
+  routeSteps RouteStep[]
+  operations Operation[]
+  createdAt DateTime @default(now())
+}
+
+model UserWorkCenter {
+  userId String
+  workCenterId String
+  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  workCenter WorkCenter @relation(fields:[workCenterId], references:[id], onDelete:Cascade)
+  @@id([userId, workCenterId])
+}
+
+model Order {
+  id String @id @default(uuid())
+  productionOrderNumber String @unique @map("number")
+  customerOrderNumber String?
+  customer String?
+  organization Organization?
+  status OrderStatus @default(DRAFT)
+  priority Priority @default(NORMAL)
+  drawingApprovalDate DateTime?
+  productionLeadDays Int?
+  dueDate DateTime?
+  comment String?
+  archivedAt DateTime?
+  items OrderItem[]
+  procurement Procurement?
+  launches ProductionLaunch[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status, dueDate])
+  @@index([customerOrderNumber])
+}
+
+model OrderItem {
+  id String @id @default(uuid())
+  orderId String
+  order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
+  name String
+  article String?
+  quantity Int
+  unitPrice Decimal @db.Decimal(14,2)
+  completedQuantity Int @default(0)
+  status OrderStatus @default(DRAFT)
+  comment String?
+  launchItems ProductionLaunchItem[]
+  routes Route[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([orderId, status])
+}
+
+model Procurement {
+  id String @id @default(uuid())
+  orderId String @unique
+  order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
+  status ProcurementStatus @default(WAITING)
+  startedAt DateTime @default(now())
+  expectedAt DateTime?
+  readyAt DateTime?
+  responsibleId String?
+  responsible User? @relation(fields:[responsibleId], references:[id])
+  comment String?
+  updatedAt DateTime @updatedAt
+  @@index([status, expectedAt])
+  @@index([responsibleId, status])
+}
+
+model ProductionLaunch {
+  id String @id @default(uuid())
+  orderId String
+  order Order @relation(fields:[orderId], references:[id])
+  number String @unique
+  priority Priority @default(NORMAL)
+  plannedStart DateTime?
+  plannedFinish DateTime?
+  items ProductionLaunchItem[]
+  createdAt DateTime @default(now())
+  @@index([orderId, plannedFinish])
+}
+
+model ProductionLaunchItem {
+  id String @id @default(uuid())
+  launchId String
+  orderItemId String
+  routeId String
+  quantity Int
+  launch ProductionLaunch @relation(fields:[launchId], references:[id], onDelete:Cascade)
+  orderItem OrderItem @relation(fields:[orderItemId], references:[id])
+  route Route @relation(fields:[routeId], references:[id])
+  operations Operation[]
+  @@unique([launchId, orderItemId])
+}
+
+model Route {
+  id String @id @default(uuid())
+  orderItemId String
+  name String
+  version Int @default(1)
+  active Boolean @default(true)
+  orderItem OrderItem @relation(fields:[orderItemId], references:[id], onDelete:Cascade)
+  steps RouteStep[]
+  launchItems ProductionLaunchItem[]
+  @@index([orderItemId, active])
+}
+
+model RouteStep {
+  id String @id @default(uuid())
+  routeId String
+  workCenterId String
+  title String
+  position Int
+  route Route @relation(fields:[routeId], references:[id], onDelete:Cascade)
+  workCenter WorkCenter @relation(fields:[workCenterId], references:[id])
+  predecessors RouteStepDependency[] @relation("successor")
+  successors RouteStepDependency[] @relation("predecessor")
+  @@unique([routeId, position])
+}
+
+model RouteStepDependency {
+  predecessorId String
+  successorId String
+  predecessor RouteStep @relation("predecessor", fields:[predecessorId], references:[id], onDelete:Cascade)
+  successor RouteStep @relation("successor", fields:[successorId], references:[id], onDelete:Cascade)
+  @@id([predecessorId, successorId])
+}
+
+model Operation {
+  id String @id @default(uuid())
+  launchItemId String
+  workCenterId String
+  title String
+  quantity Int
+  completedQuantity Int @default(0)
+  status OperationStatus @default(QUEUED)
+  priority Priority @default(NORMAL)
+  dueDate DateTime?
+  comment String?
+  stopReason String?
+  launchItem ProductionLaunchItem @relation(fields:[launchItemId], references:[id], onDelete:Cascade)
+  workCenter WorkCenter @relation(fields:[workCenterId], references:[id])
+  timeEntries OperationTimeEntry[]
+  statusHistory OperationStatusHistory[]
+  predecessors OperationDependency[] @relation("operationSuccessor")
+  successors OperationDependency[] @relation("operationPredecessor")
+  @@index([workCenterId, status, dueDate])
+}
+
+model OperationDependency {
+  predecessorId String
+  successorId String
+  predecessor Operation @relation("operationPredecessor", fields:[predecessorId], references:[id], onDelete:Cascade)
+  successor Operation @relation("operationSuccessor", fields:[successorId], references:[id], onDelete:Cascade)
+  @@id([predecessorId, successorId])
+  @@index([successorId])
+}
+
+model OperationTimeEntry {
+  id String @id @default(uuid())
+  operationId String
+  userId String
+  startedAt DateTime
+  finishedAt DateTime?
+  operation Operation @relation(fields:[operationId], references:[id], onDelete:Cascade)
+  user User @relation(fields:[userId], references:[id])
+  @@index([operationId, startedAt])
+}
+
+model OperationStatusHistory {
+  id String @id @default(uuid())
+  operationId String
+  changedById String
+  fromStatus OperationStatus?
+  toStatus OperationStatus
+  reason String?
+  changedAt DateTime @default(now())
+  operation Operation @relation(fields:[operationId], references:[id], onDelete:Cascade)
+  changedBy User @relation(fields:[changedById], references:[id])
+}
+
+model Notification {
+  id String @id @default(uuid())
+  type String
+  title String
+  message String
+  entityType String?
+  entityId String?
+  createdAt DateTime @default(now())
+  recipients NotificationRecipient[]
+  @@index([createdAt])
+}
+
+model NotificationRecipient {
+  notificationId String
+  userId String
+  readAt DateTime?
+  notification Notification @relation(fields:[notificationId], references:[id], onDelete:Cascade)
+  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  @@id([notificationId, userId])
+  @@index([userId, readAt])
+}
+
+model AuditLog {
+  id String @id @default(uuid())
+  actorId String?
+  action String
+  entityType String
+  entityId String?
+  before Json?
+  after Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+}
