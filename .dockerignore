@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+.git
+.local
+.tools
+**/*.pem
+**/*.key
+**/*.log
+**/*.dump
+**/*.backup
+**/*.tsbuildinfo
+.codex
+.agents

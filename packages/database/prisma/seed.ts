@@ -15,8 +15,8 @@ async function main() {
     throw new Error("Задайте PLANNER_INITIAL_PASSWORD (минимум 7 символов) и EMPLOYEE_INITIAL_PASSWORD (минимум 10 символов)");
   }
   const centers=[];
-  for(const name of workCenters) centers.push(await prisma.workCenter.upsert({where:{name},update:{active:true},create:{name}}));
-  await prisma.user.upsert({where:{login:"Козыренко"},update:{passwordHash:await argon2.hash(plannerPassword)},create:{login:"Козыренко",passwordHash:await argon2.hash(plannerPassword),firstName:"Анастасия",lastName:"Козыренко",role:UserRole.PLANNER}});
+  for(const name of workCenters) centers.push(await prisma.workCenter.upsert({where:{name},update:{},create:{name}}));
+  await prisma.user.upsert({where:{login:"Козыренко"},update:{},create:{login:"Козыренко",passwordHash:await argon2.hash(plannerPassword),firstName:"Анастасия",lastName:"Козыренко",role:UserRole.PLANNER}});
   const employee=await prisma.user.upsert({where:{login:"employee.gibka"},update:{},create:{login:"employee.gibka",passwordHash:await argon2.hash(employeePassword),firstName:"Тестовый",lastName:"Сотрудник",role:UserRole.EMPLOYEE}});
   const bending=centers.find(x=>x.name==="Гибка")!;
   await prisma.userWorkCenter.upsert({where:{userId_workCenterId:{userId:employee.id,workCenterId:bending.id}},update:{},create:{userId:employee.id,workCenterId:bending.id}});

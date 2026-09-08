@@ -4,6 +4,8 @@ import cors from "cors";
 import helmet from "helmet";
 import jwt from "jsonwebtoken";
 import argon2 from "argon2";
+import path from "node:path";
+import { rateLimit } from "express-rate-limit";
 import { PrismaClient, Prisma, UserRole } from "@prisma/client";
 import { z } from "zod";
 import { addWorkingDays, isDateOnly, parseDateOnly } from "./working-days.js";
@@ -13,6 +15,11 @@ import { ProductionError } from "./production-rules.js";
 
 const prisma = new PrismaClient();
 const app = express();
+const production = process.env.NODE_ENV === "production";
+const webOrigin = process.env.WEB_ORIGIN ?? process.env.RENDER_EXTERNAL_URL;
+if (production && (!webOrigin || new URL(webOrigin).protocol !== "https:")) throw new Error("Production requires an HTTPS WEB_ORIGIN");
+app.disable("x-powered-by");
+if (process.env.TRUST_PROXY_HOPS) app.set("trust proxy", Number(process.env.TRUST_PROXY_HOPS));
 const configuredSecret = process.env.SESSION_SECRET;
 if (!configuredSecret || configuredSecret.length < 32) throw new Error("SESSION_SECRET должен содержать минимум 32 символа");
 const secret: string = configuredSecret;
@@ -21,7 +28,12 @@ type Session = { sub: string; role: UserRole };
 declare global { namespace Express { interface Request { session?: Session } } }
 
 app.use(helmet());
-app.use(cors({ origin: process.env.WEB_ORIGIN ?? "http://localhost:5173", credentials: true }));
+app.use(cors({ origin: webOrigin ?? "http://localhost:5173", credentials: true }));
+app.use("/api", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  if (production && !["GET", "HEAD", "OPTIONS"].includes(req.method) && req.get("origin") !== webOrigin) return res.status(403).json({ message: "Недопустимый источник запроса" });
+  next();
+});
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
@@ -39,7 +51,7 @@ function planner(req: Request, res: Response, next: NextFunction) {
 }
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/login", rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false, skipSuccessfulRequests: true }), async (req, res) => {
   const data=z.object({login:z.string().min(1),password:z.string().min(7)}).safeParse(req.body);
   if(!data.success) return res.status(400).json({message:"Проверьте логин и пароль"});
   const user=await prisma.user.findUnique({where:{login:data.data.login}});
@@ -249,10 +261,20 @@ app.patch("/api/procurement/:id", auth, planner, async (req, res) => {
   res.json(presentProcurement(record));
 });
 
+app.use("/api", (_req, res) => { res.status(404).json({ message: "Не найдено" }); });
+if (production) {
+  const frontend = path.resolve(process.cwd(), "apps/web/dist");
+  app.use(express.static(frontend, { dotfiles: "deny" }));
+  app.use((req, res, next) => {
+    if (!["GET", "HEAD"].includes(req.method) || req.path.split("/").some(part => part.startsWith(".")) || path.extname(req.path)) return next();
+    res.sendFile(path.join(frontend, "index.html"));
+  });
+}
 app.use((error:unknown,_req:Request,res:Response,_next:NextFunction)=>{
   if (error instanceof ProductionError) return res.status(error.status).json({ message: error.message });
   if (error instanceof z.ZodError) return res.status(400).json({ message: "Проверьте заполненные поля", fields: error.flatten() });
   if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2002", "P2034"].includes(error.code)) return res.status(409).json({ message: "Данные уже изменены или номер занят. Обновите страницу и повторите действие" });
-  console.error(error); res.status(500).json({message:"Внутренняя ошибка сервера"});
+  console.error("Request failed", error instanceof Error ? error.name : "UnknownError"); res.status(500).json({message:"Внутренняя ошибка сервера"});
 });
-app.listen(Number(process.env.API_PORT??3000),()=>console.log(`API: http://localhost:${process.env.API_PORT??3000}`));
+const server = app.listen(Number(process.env.PORT ?? process.env.API_PORT ?? 3000), "0.0.0.0", () => console.log("Application ready"));
+process.on("SIGTERM", () => { server.close(() => { void prisma.$disconnect().finally(() => process.exit(0)); }); setTimeout(() => process.exit(1), 10000).unref(); });
