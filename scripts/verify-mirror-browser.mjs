@@ -14,7 +14,21 @@ export async function verifyMirror({page,prisma,request,cookie,check,root}) {
   await dialog.getByLabel('Название маршрута',{exact:true}).fill('Зеркало — параллельные ветки');
   const ids=[];
   for(const [i,name] of names.entries()){
-    await dialog.getByRole('button',{name,exact:true}).click();
+    if(i===1){
+      const transfer=await page.evaluateHandle(()=>new DataTransfer());
+      await dialog.getByRole('button',{name,exact:true}).dispatchEvent('dragstart',{dataTransfer:transfer});
+      const canvas=dialog.locator('.graph-canvas'),box=await canvas.boundingBox();
+      await canvas.dispatchEvent('dragover',{dataTransfer:transfer});
+      await canvas.dispatchEvent('drop',{dataTransfer:transfer,clientX:box.x+260,clientY:box.y+80});
+      await transfer.dispose();
+    }else await dialog.getByRole('button',{name,exact:true}).click();
+    if(i===0){
+      await page.waitForTimeout(250);
+      const block=await dialog.locator('.graph-stage').boundingBox(),window=await dialog.boundingBox();
+      assert.ok(block.width<=191&&block.height<=139);assert.ok(window.width<=1181&&window.height<=761);
+      check(true,'First block stays compact and editor uses a smaller window');
+      await page.screenshot({path:join(root,'.local','route-compact-first.png'),fullPage:false});
+    }
     ids.push(await dialog.locator('.react-flow__node').last().getAttribute('data-id'));
     await dialog.getByLabel('Наименование операции',{exact:true}).fill(`Операция ${name}`);
     await dialog.getByLabel('Материал',{exact:true}).fill(`Материал ${i+1}`);
@@ -30,7 +44,9 @@ export async function verifyMirror({page,prisma,request,cookie,check,root}) {
       await part.getByLabel('Количество деталей',{exact:true}).fill('1');
     }
   }
+  check(await dialog.locator('.react-flow__node').count()===9,'Palette supports both click and drag-and-drop');
   await dialog.getByRole('button',{name:'Показать весь маршрут',exact:true}).click();
+  await page.waitForTimeout(250);
   const links=[[1,3],[0,4],[3,4],[4,5],[5,6],[6,7],[2,7],[7,8]];
   const sourceHandle=await dialog.locator(`.react-flow__node[data-id="${ids[1]}"] .source`).boundingBox();
   const targetHandle=await dialog.locator(`.react-flow__node[data-id="${ids[3]}"] .target`).boundingBox();
@@ -67,7 +83,7 @@ export async function verifyMirror({page,prisma,request,cookie,check,root}) {
   assert.deepEqual(byName.get('Пила').components.map(p=>p.material),['латунь','латунь 2 мм','МДФ 16 мм']);
   check(true,'All nine stages preserve quantities units materials and multiple components');
   const boxes=saved.steps.map(s=>({x:s.canvasX,y:s.canvasY}));
-  for(let i=0;i<boxes.length;i++)for(let j=i+1;j<boxes.length;j++)assert.ok(Math.abs(boxes[i].x-boxes[j].x)>=240||Math.abs(boxes[i].y-boxes[j].y)>=190);
+  for(let i=0;i<boxes.length;i++)for(let j=i+1;j<boxes.length;j++)assert.ok(Math.abs(boxes[i].x-boxes[j].x)>=190||Math.abs(boxes[i].y-boxes[j].y)>=138);
   check(true,'Automatic graph layout produces non-overlapping blocks');
   await page.reload();await page.getByRole('button',{name:'Запуски',exact:true}).click();await page.getByLabel('Поиск заказов для планирования',{exact:true}).fill('TEST-MIRROR');await page.getByText('Зеркало',{exact:true}).waitFor();
   await page.locator('.item-check input').check();await page.getByLabel('Маршрут',{exact:true}).selectOption(saved.id);await page.getByRole('button',{name:'Изменить',exact:true}).click();
