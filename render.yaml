@@ -2,12 +2,11 @@ services:
   - type: web
     name: production-planning
     runtime: docker
-    plan: starter
+    plan: free
     region: frankfurt
     branch: main
     autoDeployTrigger: off
     healthCheckPath: /api/health
-    preDeployCommand: npm run db:migrate && npm run db:seed
     envVars:
       - key: NODE_ENV
         value: production
@@ -25,7 +24,7 @@ services:
         generateValue: true
 databases:
   - name: production-planning-db
-    plan: basic-256mb
+    plan: free
     region: frankfurt
     postgresMajorVersion: "16"
     databaseName: production_planning

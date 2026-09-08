@@ -12,4 +12,4 @@ RUN npm run db:generate && npm run build
 ENV NODE_ENV=production
 USER node
 EXPOSE 3000
-CMD ["node", "apps/api/dist/main.js"]
+CMD ["sh", "-c", "npm run db:migrate && npm run db:seed && exec node apps/api/dist/main.js"]
