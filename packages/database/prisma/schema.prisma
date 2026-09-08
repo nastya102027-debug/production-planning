@@ -211,6 +211,10 @@ model Operation {
   status OperationStatus @default(QUEUED)
   priority Priority @default(NORMAL)
   dueDate DateTime?
+  plannedStart DateTime?
+  plannedFinish DateTime?
+  queueOrder Int @default(0)
+  planVersion Int @default(0)
   comment String?
   stopReason String?
   launchItem ProductionLaunchItem @relation(fields:[launchItemId], references:[id], onDelete:Cascade)

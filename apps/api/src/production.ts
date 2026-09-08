@@ -108,10 +108,10 @@ export function productionRouter(prisma: PrismaClient) {
 
   function presentOperation(operation: Prisma.OperationGetPayload<{ include: typeof operationInclude }>) {
     const now = new Date();
-    return { id: operation.id, title: operation.title, quantity: operation.quantity, status: operation.status, priority: operation.priority, dueDate: operation.dueDate,
+    return { id: operation.id, title: operation.title, quantity: operation.quantity, status: operation.status, priority: operation.priority,
       comment: operation.comment, stopReason: operation.stopReason, workCenter: { id: operation.workCenter.id, name: operation.workCenter.name },
       orderNumber: operation.launchItem.orderItem.order.productionOrderNumber, itemName: operation.launchItem.orderItem.name, launchNumber: operation.launchItem.launch.number,
-      plannedStart: operation.launchItem.launch.plannedStart, predecessors: operation.predecessors.map(link => link.predecessor),
+      plannedStart: operation.plannedStart ?? operation.launchItem.launch.plannedStart, stagePlannedStart: operation.plannedStart, plannedFinish: operation.plannedFinish, queueOrder: operation.queueOrder, planVersion: operation.planVersion, dueDate: operation.plannedFinish ?? operation.dueDate, predecessors: operation.predecessors.map(link => link.predecessor),
       workSeconds: elapsedSeconds(operation.timeEntries, now), downtimeSeconds: downtimeSeconds(operation.statusHistory, now), serverNow: now.toISOString(),
       history: operation.statusHistory.map(event => ({ id: event.id, status: event.toStatus, reason: event.reason, at: event.changedAt, actor: `${event.changedBy.lastName} ${event.changedBy.firstName}` })) };
   }
@@ -122,12 +122,31 @@ export function productionRouter(prisma: PrismaClient) {
       ...(query.workCenterId ? { workCenterId: query.workCenterId } : {}), ...(query.status ? { status: query.status } : { status: { not: "CANCELLED" } }),
       ...(query.search ? { OR: [{ launchItem: { orderItem: { name: { contains: query.search, mode: "insensitive" } } } }, { launchItem: { orderItem: { order: { productionOrderNumber: { contains: query.search, mode: "insensitive" } } } } }, { launchItem: { launch: { number: { contains: query.search, mode: "insensitive" } } } }] } : {})
     };
-    const [items, total, groups] = await prisma.$transaction([prisma.operation.findMany({ where, include: operationInclude, orderBy: [{ priority: "desc" }, { dueDate: "asc" }, { id: "asc" }], skip: (query.page - 1) * 40, take: 40 }), prisma.operation.count({ where }), prisma.operation.groupBy({ by: ["status"], where, orderBy: { status: "asc" }, _count: true })]);
+    const [items, total, groups] = await prisma.$transaction([prisma.operation.findMany({ where, include: operationInclude, orderBy: [{ queueOrder: "asc" }, { priority: "desc" }, { dueDate: "asc" }, { id: "asc" }], skip: (query.page - 1) * 40, take: 40 }), prisma.operation.count({ where }), prisma.operation.groupBy({ by: ["status"], where, orderBy: { status: "asc" }, _count: true })]);
     res.json({ items: items.map(presentOperation), total, counts: Object.fromEntries(groups.map(group => [group.status, group._count])) });
   });
   router.get("/operations/:id", async (req, res) => {
     const operation = await prisma.operation.findFirst({ where: { id: String(req.params.id), ...(req.session!.role === "PLANNER" ? {} : { workCenter: { users: { some: { userId: req.session!.sub } } } }) }, include: operationInclude });
     if (!operation) throw new ProductionError(404, "Задача не найдена");
+    res.json(presentOperation(operation));
+  });
+  router.patch("/operations/:id/plan", plannerOnly, async (req, res) => {
+    const id = z.string().uuid().parse(req.params.id);
+    const input = z.object({ priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]), queueOrder: z.number().int().min(-1000000).max(1000000), plannedStart: z.string().datetime().nullable(), plannedFinish: z.string().datetime().nullable(), planVersion: z.number().int().nonnegative() }).strict().parse(req.body);
+    const operation = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "Operation" WHERE id = ${id} FOR UPDATE`;
+      const before = await tx.operation.findUnique({ where: { id }, include: operationInclude });
+      if (!before) throw new ProductionError(404, "Задача не найдена");
+      if (["COMPLETED", "CANCELLED"].includes(before.status)) throw new ProductionError(409, "Планирование завершённой задачи недоступно");
+      if (before.planVersion !== input.planVersion) throw new ProductionError(409, "План уже изменён. Закройте форму и откройте задачу заново");
+      const start = input.plannedStart ? new Date(input.plannedStart) : before.launchItem.launch.plannedStart;
+      const finish = input.plannedFinish ? new Date(input.plannedFinish) : before.dueDate;
+      if (start && finish && start > finish) throw new ProductionError(400, "Плановое завершение не может быть раньше начала");
+      const updated = await tx.operation.update({ where: { id }, data: { priority: input.priority, queueOrder: input.queueOrder, plannedStart: input.plannedStart, plannedFinish: input.plannedFinish, planVersion: { increment: 1 } }, include: operationInclude });
+      await tx.auditLog.create({ data: { actorId: req.session!.sub, entityType: "Operation", entityId: id, action: "OPERATION_PLAN_UPDATED", before: { priority: before.priority, queueOrder: before.queueOrder, plannedStart: before.plannedStart?.toISOString() ?? null, plannedFinish: before.plannedFinish?.toISOString() ?? null }, after: input } });
+      return updated;
+    });
+    publish([operation.workCenterId]);
     res.json(presentOperation(operation));
   });
   router.get("/planning/centers", plannerOnly, async (_req, res) => {

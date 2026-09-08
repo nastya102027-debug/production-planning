@@ -74,6 +74,14 @@ try {
   const tasks = launch.data.items[0].operations;
   check(tasks.length === 4 && tasks.every(task => task.quantity === 4 && task.dueDate === order.dueDate), "Partial launch creates every stage and inherits order deadline");
   const first = tasks.find(task => task.title === "Первый этап"), branchA = tasks.find(task => task.title === "Ветка А"), branchB = tasks.find(task => task.title === "Ветка Б"), last = tasks.find(task => task.title === "Завершающий этап");
+  const plan = { priority: "HIGH", queueOrder: -10, plannedStart: "2026-09-09T08:00:00Z", plannedFinish: "2026-09-10T16:00:00Z", planVersion: 0 };
+  check((await request(`/operations/${first.id}/plan`, workerCookie, plan, "PATCH")).status === 403, "Employee cannot change task schedule");
+  check((await request(`/operations/${first.id}/plan`, cookie, {...plan,plannedFinish:"2026-09-08T08:00:00Z"}, "PATCH")).status === 400, "Task finish cannot precede start");
+  const planned = await request(`/operations/${first.id}/plan`, cookie, plan, "PATCH");
+  check(planned.status === 200 && planned.data.queueOrder === -10 && planned.data.dueDate === new Date(plan.plannedFinish).toISOString() && planned.data.planVersion === 1, "Planner persists stage dates priority and queue order");
+  check((await request(`/operations/${first.id}/plan`, cookie, plan, "PATCH")).status === 409, "Stale task plan is rejected");
+  check((await request("/operations", workerCookie)).data.items[0].id === first.id, "Employee sees planner queue order");
+  check((await request(`/operations/${first.id}/plan`, cookie, {...plan, plannedStart:null, plannedFinish:null, planVersion:1}, "PATCH")).data.dueDate === order.dueDate, "Clearing stage dates restores inherited deadline");
   const employeeTasks = await request("/operations", workerCookie);
   check(employeeTasks.data.total === 3 && employeeTasks.data.items.every(task => task.workCenter.id === centerA.id), "Employee only receives own center tasks");
   check(!JSON.stringify(employeeTasks.data).includes("unitPrice") && !JSON.stringify(employeeTasks.data).includes("passwordHash"), "Employee responses contain no finance or password fields");
