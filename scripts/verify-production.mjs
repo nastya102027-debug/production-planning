@@ -173,6 +173,13 @@ try {
     await page.waitForFunction(()=>document.querySelector('section[aria-label="Прогноз заказа"] form button')?.disabled===true);
     check((await request(`/orders/${order.id}/forecast`,cookie)).data.riskHours===24,'Browser saves order-specific risk threshold');
     await page.getByRole('button',{name:'Закрыть заказ',exact:true}).click();
+    const attention=page.getByRole('region',{name:'Риски заказов',exact:true});
+    await attention.getByRole('button',{name:/Нужно уточнить данные/}).click();
+    await attention.getByRole('button').filter({hasText:'Производство № TEST-100'}).click();
+    await page.getByRole('dialog',{name:'Позиции заказа',exact:true}).getByRole('heading',{name:'Прогноз заказа',exact:true}).waitFor();
+    check(true,'Attention filter opens the matching order forecast');
+    await page.getByRole('button',{name:'Закрыть заказ',exact:true}).click();
+
     await page.getByRole("button", { name: "Запуски", exact: true }).click();
     await page.getByRole("heading", { name: "Загрузка производственных участков" }).waitFor();
     await page.getByRole("button", { name: "Создать", exact: true }).click();
@@ -330,6 +337,27 @@ try {
   const actualPreviewLaunch=await request('/launches',cookie,{number:'TEST-PREVIEW-ACTUAL',orderId:capacityOrder.id,items:[{orderItemId:capacityOrder.items[0].id,routeId:previewRoute.id,quantity:1}]});
   check(actualPreviewLaunch.status===201 && actualPreviewLaunch.data.items[0].operations[0].normHours===2 && (await request(previewPath,cookie)).data.remaining===0,'Actual launch copies selected plan norms and removes launched quantity from preview');
   check((await request(previewPath,cookie,{version:1,plan:null},'PUT')).status===204 && (await request(previewPath,cookie)).data.plan===null,'Remaining preview can be removed');
+  const riskCenter=await prisma.workCenter.create({data:{name:'Тест фильтров риска'}});
+  const riskOrders=[];
+  for(const [number,dueDate] of [['TEST-RISK',new Date(Date.now()+20*86400000)],['TEST-LATE',new Date(Date.now()-86400000)]]){
+    const fixture=await prisma.order.create({data:{productionOrderNumber:number,dueDate,forecastRiskHours:100000,items:{create:{name:'Тест риска',quantity:3,unitPrice:10.1}}},include:{items:true}});
+    const fixtureRoute=(await request(`/order-items/${fixture.items[0].id}/routes`,cookie,{name:'Риск',steps:[{title:'Этап',workCenterId:riskCenter.id,predecessorIndexes:[]}]})).data;
+    await request(`/order-items/${fixture.items[0].id}/remaining-plan`,cookie,{version:0,plan:{routeId:fixtureRoute.id,start:null,steps:fixtureRoute.steps.map(step=>({stepId:step.id,hoursPerUnit:1}))}},'PUT');
+    riskOrders.push(fixture);
+  }
+  check((await request('/planner/forecast-attention',workerCookie)).status===403,'Employee cannot read forecast attention');
+  const risks=(await request('/planner/forecast-attention?filter=RISK',cookie)).data;
+  const late=(await request('/planner/forecast-attention?filter=LATE',cookie)).data;
+  check(risks.items.some(row=>row.id===riskOrders[0].id && row.amount===30.3) && late.items.some(row=>row.id===riskOrders[1].id),'Risk filters classify forecasts and count unfinished money');
+  const detail=(await request(`/orders/${riskOrders[0].id}/forecast`,cookie)).data;
+  check(detail.state==='RISK' && risks.items.find(row=>row.id===riskOrders[0].id).reason==='Резерв не превышает порог риска','Risk list agrees with order forecast');
+  await prisma.order.update({where:{id:riskOrders[0].id},data:{archivedAt:new Date()}});
+  check(!(await request('/planner/forecast-attention?filter=RISK',cookie)).data.items.some(row=>row.id===riskOrders[0].id),'Archived orders are excluded from attention');
+  await prisma.order.update({where:{id:riskOrders[0].id},data:{archivedAt:null}});
+  await prisma.order.createMany({data:Array.from({length:31},(_,i)=>({productionOrderNumber:'TEST-DATA-'+i}))});
+  const dataPage1=(await request('/planner/forecast-attention?filter=DATA&page=1',cookie)).data,dataPage2=(await request('/planner/forecast-attention?filter=DATA&page=2',cookie)).data;
+  check(dataPage1.items.length===30 && dataPage2.items.length>0 && !dataPage2.items.some(row=>dataPage1.items.some(first=>first.id===row.id)) && dataPage1.total===dataPage1.counts.DATA.count,'Missing-data orders paginate without loss or duplicates');
+  check((await request('/planner/forecast-attention?filter=OTHER',cookie)).status===400,'Invalid forecast attention filter rejected');
   const archiveFixture=await prisma.order.create({data:{productionOrderNumber:'TEST-CLEAR',archivedAt:new Date(),items:{create:{name:'Архивная деталь',quantity:1,unitPrice:10}}},include:{items:true}});
   check((await request('/archive/clear',workerCookie,{all:true})).status===403,'Employee cannot clear archive');
   check((await request('/archive/clear',cookie,{id:order.id,updatedAt:order.updatedAt})).status===409,'Active order cannot be cleared');
