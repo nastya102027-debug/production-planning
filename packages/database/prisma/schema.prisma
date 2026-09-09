@@ -223,6 +223,8 @@ model Operation {
   plannedFinish DateTime?
   queueOrder Int @default(0)
   planVersion Int @default(0)
+  normHours Float?
+  riskHours Float?
   assigneeId String?
   assignee User? @relation(fields:[assigneeId], references:[id], onDelete:SetNull)
   comment String?

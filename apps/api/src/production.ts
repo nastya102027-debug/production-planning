@@ -1,3 +1,4 @@
+import { forecast } from "./forecast.js";
 import { parseGraph, routeDetails } from "./route-graph.js";
 import { Router, type Response } from "express";
 import { Prisma, type PrismaClient, type OperationStatus } from "@prisma/client";
@@ -110,7 +111,7 @@ export function productionRouter(prisma: PrismaClient) {
 
   function presentOperation(operation: Prisma.OperationGetPayload<{ include: typeof operationInclude }>) {
     const now = new Date();
-    return { id: operation.id, title: operation.title, quantity: operation.quantity, status: operation.status, priority: operation.priority,
+    return { normHours: operation.normHours, riskHours: operation.riskHours, id: operation.id, title: operation.title, quantity: operation.quantity, status: operation.status, priority: operation.priority,
       comment: operation.comment, stopReason: operation.stopReason, assignee: operation.assignee, workCenter: { id: operation.workCenter.id, name: operation.workCenter.name },
       orderNumber: operation.launchItem.orderItem.order.productionOrderNumber, itemName: operation.launchItem.orderItem.name, launchNumber: operation.launchItem.launch.number,
       plannedStart: operation.plannedStart ?? operation.launchItem.launch.plannedStart, stagePlannedStart: operation.plannedStart, plannedFinish: operation.plannedFinish, queueOrder: operation.queueOrder, planVersion: operation.planVersion, dueDate: operation.plannedFinish ?? operation.dueDate, predecessors: operation.predecessors.map(link => link.predecessor),
@@ -132,6 +133,14 @@ export function productionRouter(prisma: PrismaClient) {
     if (!operation) throw new ProductionError(404, "Задача не найдена");
     res.json(presentOperation(operation));
   });
+  router.get("/operations/:id/forecast", plannerOnly, async (req,res)=>{
+    const operation=await prisma.operation.findUnique({where:{id:z.string().uuid().parse(req.params.id)}});
+    if(!operation) throw new ProductionError(404,"Задача не найдена");
+    const rows=await prisma.operation.findMany({where:{launchItemId:operation.launchItemId},include:operationInclude});
+    const now=new Date();
+    const result=forecast(rows.map(row=>({id:row.id,title:row.title,status:row.status,normHours:row.normHours,riskHours:row.riskHours,workHours:elapsedSeconds(row.timeEntries,now)/3600,start:row.plannedStart??row.launchItem.launch.plannedStart,due:row.plannedFinish??row.dueDate,predecessors:row.predecessors.map(p=>p.predecessor.id)})),now);
+    res.json({stage:result[operation.id],stages:result,asOf:now});
+  });
   router.get("/operations/:id/assignees", plannerOnly, async (req, res) => {
     const operation = await prisma.operation.findUnique({ where: { id: z.string().uuid().parse(req.params.id) }, select: { workCenterId: true } });
     if (!operation) throw new ProductionError(404, "Задача не найдена");
@@ -139,7 +148,7 @@ export function productionRouter(prisma: PrismaClient) {
   });
   router.patch("/operations/:id/plan", plannerOnly, async (req, res) => {
     const id = z.string().uuid().parse(req.params.id);
-    const input = z.object({ priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]), queueOrder: z.number().int().min(-1000000).max(1000000), plannedStart: z.string().datetime().nullable(), plannedFinish: z.string().datetime().nullable(), planVersion: z.number().int().nonnegative(), assigneeId: z.string().uuid().nullable().optional() }).strict().parse(req.body);
+    const input = z.object({ priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]), queueOrder: z.number().int().min(-1000000).max(1000000), plannedStart: z.string().datetime().nullable(), plannedFinish: z.string().datetime().nullable(), planVersion: z.number().int().nonnegative(), normHours: z.number().finite().positive().max(100000).nullable().optional(), riskHours: z.number().finite().nonnegative().max(100000).nullable().optional(), assigneeId: z.string().uuid().nullable().optional() }).strict().parse(req.body);
     const operation = await prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM "Operation" WHERE id = ${id} FOR UPDATE`;
       const before = await tx.operation.findUnique({ where: { id }, include: operationInclude });
@@ -150,8 +159,8 @@ export function productionRouter(prisma: PrismaClient) {
       const start = input.plannedStart ? new Date(input.plannedStart) : before.launchItem.launch.plannedStart;
       const finish = input.plannedFinish ? new Date(input.plannedFinish) : before.dueDate;
       if (start && finish && start > finish) throw new ProductionError(400, "Плановое завершение не может быть раньше начала");
-      const updated = await tx.operation.update({ where: { id }, data: { ...(input.assigneeId !== undefined ? { assigneeId: input.assigneeId } : {}), priority: input.priority, queueOrder: input.queueOrder, plannedStart: input.plannedStart, plannedFinish: input.plannedFinish, planVersion: { increment: 1 } }, include: operationInclude });
-      await tx.auditLog.create({ data: { actorId: req.session!.sub, entityType: "Operation", entityId: id, action: "OPERATION_PLAN_UPDATED", before: { assigneeId: before.assigneeId, priority: before.priority, queueOrder: before.queueOrder, plannedStart: before.plannedStart?.toISOString() ?? null, plannedFinish: before.plannedFinish?.toISOString() ?? null }, after: input } });
+      const updated = await tx.operation.update({ where: { id }, data: { ...(input.normHours !== undefined ? {normHours:input.normHours}:{}), ...(input.riskHours !== undefined ? {riskHours:input.riskHours}:{}), ...(input.assigneeId !== undefined ? { assigneeId: input.assigneeId } : {}), priority: input.priority, queueOrder: input.queueOrder, plannedStart: input.plannedStart, plannedFinish: input.plannedFinish, planVersion: { increment: 1 } }, include: operationInclude });
+      await tx.auditLog.create({ data: { actorId: req.session!.sub, entityType: "Operation", entityId: id, action: "OPERATION_PLAN_UPDATED", before: { normHours:before.normHours, riskHours:before.riskHours, assigneeId: before.assigneeId, priority: before.priority, queueOrder: before.queueOrder, plannedStart: before.plannedStart?.toISOString() ?? null, plannedFinish: before.plannedFinish?.toISOString() ?? null }, after: input } });
       return updated;
     });
     publish([operation.workCenterId]);
