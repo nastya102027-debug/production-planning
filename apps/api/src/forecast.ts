@@ -1,4 +1,5 @@
-type Stage={id:string;title:string;status:string;normHours:number|null;riskHours:number|null;workHours:number;start:Date|null;due:Date|null;predecessors:string[]};
+import {finishInCalendar,type WorkCalendar} from "./work-calendar.js";
+type Stage={calendar?:WorkCalendar|null;id:string;title:string;status:string;normHours:number|null;riskHours:number|null;workHours:number;start:Date|null;due:Date|null;predecessors:string[]};
 type Result={finish:string|null;reserveHours:number|null;state:string;reason?:string};
 export function forecast(rows:Stage[],now:Date):Record<string,Result>{
   const results:Record<string,Result>={},visiting=new Set<string>(),byId=new Map(rows.map(row=>[row.id,row]));
@@ -17,7 +18,8 @@ export function forecast(rows:Stage[],now:Date):Record<string,Result>{
     const missing=parents.find(p=>!p.finish);
     if(missing)return results[id]=unknown(missing.reason??'Недостаточно данных предыдущего этапа');
     const start=Math.max(now.getTime(),row.start?.getTime()??0,...parents.map(p=>new Date(p.finish!).getTime()));
-    const finish=start+remaining*3600000;
+    const finish=row.calendar?finishInCalendar(start,remaining,row.calendar):start+remaining*3600000;
+    if(finish===null)return results[id]=unknown("Прогноз превышает горизонт календаря: "+row.title);
     const reserveHours=row.due?(row.due.getTime()-finish)/3600000:null;
     const state=reserveHours===null?'NO_DEADLINE':reserveHours<0?'LATE':row.riskHours===null?'NO_THRESHOLD':reserveHours<=row.riskHours?'RISK':'ON_TIME';
     return results[id]={finish:new Date(finish).toISOString(),reserveHours,state};

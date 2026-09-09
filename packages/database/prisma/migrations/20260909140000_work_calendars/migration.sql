@@ -1,0 +1,1 @@
+ALTER TABLE "WorkCenter" ADD COLUMN "calendar" JSONB, ADD COLUMN "calendarVersion" INTEGER NOT NULL DEFAULT 0;

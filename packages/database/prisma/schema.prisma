@@ -70,6 +70,8 @@ model User {
 }
 
 model WorkCenter {
+  calendar Json?
+  calendarVersion Int @default(0)
   id String @id @default(uuid())
   name String @unique
   active Boolean @default(true)

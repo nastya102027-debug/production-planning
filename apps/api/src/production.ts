@@ -1,3 +1,4 @@
+import {calendarInput} from "./work-calendar.js";
 import { forecast } from "./forecast.js";
 import { parseGraph, routeDetails } from "./route-graph.js";
 import { Router, type Response } from "express";
@@ -133,13 +134,30 @@ export function productionRouter(prisma: PrismaClient) {
     if (!operation) throw new ProductionError(404, "Задача не найдена");
     res.json(presentOperation(operation));
   });
+  router.get("/work-centers/:id/calendar",plannerOnly,async(req,res)=>{
+    const center=await prisma.workCenter.findUnique({where:{id:z.string().uuid().parse(req.params.id)},select:{id:true,name:true,calendar:true,calendarVersion:true}});
+    if(!center)throw new ProductionError(404,"Участок не найден");res.json(center);
+  });
+  router.put("/work-centers/:id/calendar",plannerOnly,async(req,res)=>{
+    const id=z.string().uuid().parse(req.params.id);
+    const input=z.object({calendar:calendarInput.nullable(),calendarVersion:z.number().int().nonnegative()}).strict().parse(req.body);
+    const center=await prisma.$transaction(async tx=>{
+      await tx.$queryRaw`SELECT id FROM "WorkCenter" WHERE id = ${id} FOR UPDATE`;
+      const before=await tx.workCenter.findUnique({where:{id}});
+      if(!before)throw new ProductionError(404,"Участок не найден");
+      if(before.calendarVersion!==input.calendarVersion)throw new ProductionError(409,"Календарь уже изменён. Откройте настройки заново");
+      const after=await tx.workCenter.update({where:{id},data:{calendar:input.calendar??Prisma.DbNull,calendarVersion:{increment:1}},select:{id:true,name:true,calendar:true,calendarVersion:true}});
+      await tx.auditLog.create({data:{actorId:req.session!.sub,action:"WORK_CALENDAR_UPDATED",entityType:"WorkCenter",entityId:id,before:{calendar:before.calendar},after:input}});
+      return after;
+    });publish([id]);res.json(center);
+  });
   router.get("/operations/:id/forecast", plannerOnly, async (req,res)=>{
     const operation=await prisma.operation.findUnique({where:{id:z.string().uuid().parse(req.params.id)}});
     if(!operation) throw new ProductionError(404,"Задача не найдена");
     const rows=await prisma.operation.findMany({where:{launchItemId:operation.launchItemId},include:operationInclude});
     const now=new Date();
-    const result=forecast(rows.map(row=>({id:row.id,title:row.title,status:row.status,normHours:row.normHours,riskHours:row.riskHours,workHours:elapsedSeconds(row.timeEntries,now)/3600,start:row.plannedStart??row.launchItem.launch.plannedStart,due:row.plannedFinish??row.dueDate,predecessors:row.predecessors.map(p=>p.predecessor.id)})),now);
-    res.json({stage:result[operation.id],stages:result,asOf:now});
+    const result=forecast(rows.map(row=>({calendar:row.workCenter.calendar?calendarInput.parse(row.workCenter.calendar):null,id:row.id,title:row.title,status:row.status,normHours:row.normHours,riskHours:row.riskHours,workHours:elapsedSeconds(row.timeEntries,now)/3600,start:row.plannedStart??row.launchItem.launch.plannedStart,due:row.plannedFinish??row.dueDate,predecessors:row.predecessors.map(p=>p.predecessor.id)})),now);
+    res.json({stage:result[operation.id],stages:result,asOf:now,continuousCenters:[...new Set(rows.filter(row=>row.status!=="COMPLETED"&&!row.workCenter.calendar).map(row=>row.workCenter.name))]});
   });
   router.get("/operations/:id/assignees", plannerOnly, async (req, res) => {
     const operation = await prisma.operation.findUnique({ where: { id: z.string().uuid().parse(req.params.id) }, select: { workCenterId: true } });
