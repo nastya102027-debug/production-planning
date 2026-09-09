@@ -9,6 +9,7 @@ import { PlanningScreen } from "./planning";
 import { OperationsScreen, Notifications } from "./operations";
 import { useProductionEvents } from "./production-api";
 import { Dashboard } from "./dashboard";
+import { OrderForecast } from "./order-forecast";
 
 type User = { firstName:string; lastName:string; role:"PLANNER"|"EMPLOYEE"; workCenters:{workCenter:{id:string;name:string}}[] };
 type Summary = { orders:number; inProcurement:number; operations:number; stopped:number };
@@ -133,6 +134,7 @@ function OrderForm({onClose,onCreated,existing}:{onClose:()=>void;onCreated:(ord
 }
 
 function OrdersScreen() {
+  const [forecastOrder,setForecastOrder]=useState<Order|null>(null);
   const [clearing,setClearing]=useState(false),[notice,setNotice]=useState("");
   const [orders,setOrders]=useState<Order[]>([]); const [loading,setLoading]=useState(true); const [search,setSearch]=useState(""); const [showForm,setShowForm]=useState(false); const [editing,setEditing]=useState<Order>(); const [archived,setArchived]=useState(false); const [error,setError]=useState("");
   const load=()=>{setLoading(true);return api<Order[]>(`/orders?archived=${archived}&search=${encodeURIComponent(search)}`).then(setOrders).catch(e=>setError(e.message)).finally(()=>setLoading(false));};
@@ -151,9 +153,10 @@ function OrdersScreen() {
         <span><b>Производство № {order.productionOrderNumber}</b><small>Заказ покупателя № {order.customerOrderNumber||"—"}</small>{order.organization&&<i className={`organization-badge org-${order.organization.toLowerCase()}`}>{organizationLabel[order.organization]}</i>}</span>
         <span><b>{displayDate(order.dueDate)}</b>{order.drawingApprovalDate&&<small>Согласовано: {displayDate(order.drawingApprovalDate)} · {order.productionLeadDays} раб. дн.</small>}</span>
         <span><i className={`status ${order.status.toLowerCase()}`}>{statusLabel[order.status]||order.status}</i><small>{priorityLabel[order.priority]}</small></span>
-        <span>{order.items.length}</span><span>{money(order.completedTotal)}</span><span><b>{money(order.total)}</b>{!archived&&<button className="secondary" onClick={()=>{setEditing(order);setShowForm(true);}}>Изменить</button>}<button className="secondary" disabled={clearing} onClick={()=>void archive(order)}>{archived?"Восстановить":"В архив"}</button>{archived&&<button className="secondary" disabled={clearing} onClick={()=>void clearArchive(order)}>Очистить</button>}</span>
+        <span>{order.items.length}</span><span>{money(order.completedTotal)}</span><span><b>{money(order.total)}</b>{!archived&&<button className="secondary" onClick={()=>{setEditing(order);setShowForm(true);}}>Изменить</button>}{!archived&&<button className="secondary" onClick={()=>setForecastOrder(order)}>Прогноз</button>}<button className="secondary" disabled={clearing} onClick={()=>void archive(order)}>{archived?"Восстановить":"В архив"}</button>{archived&&<button className="secondary" disabled={clearing} onClick={()=>void clearArchive(order)}>Очистить</button>}</span>
       </div>)}
     </div>
+    {forecastOrder&&<div className="modal-backdrop"><section className="task-dialog" role="dialog" aria-modal="true" aria-label="Прогноз заказа"><header><h2>Заказ № {forecastOrder.productionOrderNumber}</h2><button aria-label="Закрыть прогноз" onClick={()=>{setForecastOrder(null);void load();}}>×</button></header><OrderForecast id={forecastOrder.id}/></section></div>}
     {showForm&&<OrderForm existing={editing} onClose={()=>setShowForm(false)} onCreated={()=>{setShowForm(false);void load();}}/>}
   </div>;
 }

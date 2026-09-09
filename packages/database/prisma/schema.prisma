@@ -104,6 +104,7 @@ model Order {
   comment String?
   archivedAt DateTime?
   archiveClearedAt DateTime?
+  forecastRiskHours Float?
   items OrderItem[]
   procurement Procurement?
   launches ProductionLaunch[]

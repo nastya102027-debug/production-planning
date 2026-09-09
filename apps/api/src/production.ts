@@ -1,3 +1,4 @@
+import {summarizeOrderForecast} from "./order-forecast.js";
 import {calendarInput} from "./work-calendar.js";
 import {capacityForecast,relatedTasks} from "./capacity-forecast.js";
 import { parseGraph, routeDetails } from "./route-graph.js";
@@ -150,6 +151,35 @@ export function productionRouter(prisma: PrismaClient) {
       await tx.auditLog.create({data:{actorId:req.session!.sub,action:"WORK_CALENDAR_UPDATED",entityType:"WorkCenter",entityId:id,before:{calendar:before.calendar,parallelSlots:before.parallelSlots},after:input}});
       return after;
     });publish([id]);res.json(center);
+  });
+  router.patch("/orders/:id/forecast-settings",plannerOnly,async(req,res)=>{
+    const id=z.string().uuid().parse(req.params.id);
+    const input=z.object({riskHours:z.number().finite().min(0).max(100000).nullable(),updatedAt:z.string().datetime()}).strict().parse(req.body);
+    await prisma.$transaction(async tx=>{
+      const updated=await tx.order.updateMany({where:{id,archivedAt:null,updatedAt:new Date(input.updatedAt)},data:{forecastRiskHours:input.riskHours}});
+      if(!updated.count)throw new ProductionError(409,"Заказ изменён или недоступен. Обновите прогноз");
+      await tx.auditLog.create({data:{actorId:req.session!.sub,action:"ORDER_FORECAST_SETTINGS",entityType:"Order",entityId:id,after:input}});
+    });publish();res.sendStatus(204);
+  });
+  router.get("/orders/:id/forecast",plannerOnly,async(req,res)=>{
+    const id=z.string().uuid().parse(req.params.id),now=new Date();
+    const order=await prisma.order.findFirst({where:{id,archivedAt:null},include:{procurement:true,items:{include:{launchItems:{include:{operations:{select:{id:true,status:true}}}}}}}});
+    if(!order)throw new ProductionError(404,"Заказ не найден");
+    const rows=await prisma.operation.findMany({where:{status:{in:["QUEUED","IN_PROGRESS","PAUSED"]}},include:{workCenter:true,timeEntries:true,predecessors:{include:{predecessor:{select:{status:true}}}},launchItem:{select:{launch:{select:{plannedStart:true}},orderItem:{select:{order:{select:{id:true,procurement:true}}}}}}}});
+    const procurementBlocks=new Map<string,string>();
+    const tasks=rows.map(row=>{
+      const procurement=row.launchItem.orderItem.order.procurement;
+      const waiting=row.status==='QUEUED'&&procurement&&!['READY','NOT_REQUIRED'].includes(procurement.status);
+      if(waiting&&(!procurement.expectedAt||procurement.expectedAt<=now))procurementBlocks.set(row.id,'Уточните ожидаемую дату готовности закупки');
+      const start=row.plannedStart??row.launchItem.launch.plannedStart;
+      return {id:row.id,title:row.title,workCenterId:row.workCenterId,parallelSlots:row.workCenter.parallelSlots,queueOrder:row.queueOrder,priority:row.priority,calendar:row.workCenter.calendar?calendarInput.parse(row.workCenter.calendar):null,status:row.status,normHours:procurementBlocks.has(row.id)?null:row.normHours,riskHours:row.riskHours,workHours:elapsedSeconds(row.timeEntries,now)/3600,start:waiting&&procurement.expectedAt?new Date(Math.max(start?.getTime()??0,procurement.expectedAt.getTime())):start,due:row.plannedFinish??row.dueDate,predecessors:row.predecessors.filter(p=>p.predecessor.status!=='COMPLETED').map(p=>p.predecessorId)};
+    });
+    const targetIds=new Set(order.items.flatMap(item=>item.launchItems.flatMap(launch=>launch.operations.map(op=>op.id))));
+    const relevantIds=new Set<string>();for(const target of targetIds)for(const task of relatedTasks(tasks,target))relevantIds.add(task.id);
+    const relevant=tasks.filter(task=>relevantIds.has(task.id));
+    const estimates=capacityForecast(relevant,now);
+    for(const [id,reason] of procurementBlocks)if(estimates[id])estimates[id]={finish:null,reserveHours:null,state:'UNKNOWN',reason};
+    res.json({...summarizeOrderForecast(order,estimates,now),dueDate:order.dueDate,riskHours:order.forecastRiskHours,updatedAt:order.updatedAt,asOf:now,procurement:order.procurement?{status:order.procurement.status,expectedAt:order.procurement.expectedAt}:null,continuousCenters:[...new Set(rows.filter(row=>relevantIds.has(row.id)&&!row.workCenter.calendar).map(row=>row.workCenter.name))],unlimitedCenters:[...new Set(rows.filter(row=>relevantIds.has(row.id)&&!row.workCenter.parallelSlots).map(row=>row.workCenter.name))]});
   });
   router.get("/operations/:id/forecast", plannerOnly, async (req,res)=>{
     const operation=await prisma.operation.findUnique({where:{id:z.string().uuid().parse(req.params.id)}});
