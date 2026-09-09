@@ -128,6 +128,9 @@ try {
   check((await request(`/orders/${order.id}`, cookie, { ...editBody, items: [{ ...editBody.items[0], quantity: 9 }] }, "PUT")).status === 409, "Order quantity cannot fall below launched quantity");
   const edited = await request(`/orders/${order.id}`, cookie, editBody, "PUT");
   check(edited.status === 200 && edited.data.total === 1250 && edited.data.completedTotal === 500, "Order edit recalculates total and completed value");
+  check((await request('/planner/dashboard',workerCookie)).status===403,'Employee cannot access financial dispatcher');
+  const dispatcher=await request('/planner/dashboard',cookie);
+  check(dispatcher.status===200&&dispatcher.data.groups.production.amount===750&&dispatcher.data.groups.completed.amount===500,'Dispatcher splits partial order money across stages');
   check((await request(`/orders/${order.id}`, cookie, editBody, "PUT")).status === 409, "Stale order edits cannot overwrite newer changes");
   const archiveBody = { archived: true, updatedAt: edited.data.updatedAt };
   check((await request(`/orders/${order.id}/archive`, workerCookie, archiveBody, "PATCH")).status === 403, "Employee cannot archive order");
@@ -147,6 +150,12 @@ try {
     const page = await context.newPage(); const errors = []; page.on("pageerror", error => errors.push(error.message));
     await page.goto("http://localhost:5173");
     await page.getByLabel("Логин", { exact: true }).fill("test-planner"); await page.getByLabel("Пароль", { exact: true }).fill(password); await page.getByRole("button", { name: "Войти", exact: true }).click();
+    await page.getByRole('heading',{name:'Состояние производства',exact:true}).waitFor();
+    await page.locator('.dispatcher-metrics button').filter({hasText:'В производстве'}).click();
+    await page.locator('.dispatcher-orders button').filter({hasText:'TEST-100'}).click();
+    await page.getByRole('dialog',{name:'Позиции заказа',exact:true}).waitFor();
+    check(true,'Dispatcher KPI opens filtered orders and order details');
+    await page.getByRole('button',{name:'Закрыть заказ',exact:true}).click();
     await page.getByRole("button", { name: "Запуски", exact: true }).click();
     await page.getByRole("heading", { name: "Загрузка производственных участков" }).waitFor();
     await page.getByRole("button", { name: "Создать", exact: true }).click();

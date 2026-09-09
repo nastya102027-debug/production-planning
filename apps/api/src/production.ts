@@ -93,7 +93,7 @@ export function productionRouter(prisma: PrismaClient) {
         const launchItem = await tx.productionLaunchItem.create({ data: { launchId: created.id, ...requested } });
         const operationByStep = new Map<string, string>();
         for (const step of route.steps) {
-          const operation = await tx.operation.create({ data: { launchItemId: launchItem.id, workCenterId: step.workCenterId, title: step.title, quantity: requested.quantity, priority: input.priority, dueDate: input.plannedFinish ? new Date(input.plannedFinish) : order.dueDate, comment: item.comment,
+          const operation = await tx.operation.create({ data: { launchItemId: launchItem.id, workCenterId: step.workCenterId, title: step.title || step.workCenter.name, quantity: requested.quantity, priority: input.priority, dueDate: input.plannedFinish ? new Date(input.plannedFinish) : order.dueDate, comment: item.comment,
             statusHistory: { create: { changedById: req.session!.sub, toStatus: "QUEUED" } } } });
           operationByStep.set(step.id, operation.id);
         }

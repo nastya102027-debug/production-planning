@@ -13,6 +13,7 @@ import { addWorkingDays, isDateOnly, parseDateOnly } from "./working-days.js";
 import { productionRouter } from "./production.js";
 import { ProductionError } from "./production-rules.js";
 import { staffRouter } from "./staff.js";
+import { dashboardTotals } from "./dashboard.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -71,6 +72,14 @@ app.get("/api/work-centers",auth,async(req,res)=>{
   const links=await prisma.userWorkCenter.findMany({where:{userId:req.session!.sub},select:{workCenter:true}});res.json(links.map(x=>x.workCenter));
 });
 app.use("/api", auth, productionRouter(prisma));
+app.get("/api/planner/dashboard",auth,planner,async(_req,res)=>{
+  const [orders,stopped,problems]=await prisma.$transaction([
+    prisma.order.findMany({where:{archivedAt:null},select:{id:true,productionOrderNumber:true,status:true,dueDate:true,procurement:{select:{status:true}},items:{select:{quantity:true,completedQuantity:true,unitPrice:true,launchItems:{select:{quantity:true}}}}}}),
+    prisma.operation.count({where:{status:"PAUSED"}}),
+    prisma.notificationRecipient.count({where:{userId:_req.session!.sub,readAt:null}})
+  ]);
+  res.json({groups:dashboardTotals(orders),stopped,unread:problems,asOf:new Date().toISOString()});
+});
 app.get("/api/planner/summary",auth,planner,async(_req,res)=>{
   const [orders,inProcurement,operations,stopped]=await Promise.all([
     prisma.order.count({where:{archivedAt:null}}),prisma.procurement.count({where:{status:{not:"READY"}}}),

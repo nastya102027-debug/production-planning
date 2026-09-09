@@ -25,13 +25,13 @@ export async function verifyMirror({page,prisma,request,cookie,check,root}) {
     if(i===0){
       await page.waitForTimeout(250);
       const block=await dialog.locator('.graph-stage').boundingBox(),window=await dialog.boundingBox();
-      assert.ok(block.width<=191&&block.height<=139);assert.ok(window.width<=1181&&window.height<=761);
-      check(true,'First block stays compact and editor uses a smaller window');
+      assert.ok(block.width<=191&&block.height<=139);assert.ok(window.width<=1481&&window.height<=901);
+      check(true,'First block stays compact inside the enlarged editor');
       await page.screenshot({path:join(root,'.local','route-compact-first.png'),fullPage:false});
     }
     ids.push(await dialog.locator('.react-flow__node').last().getAttribute('data-id'));
-    await dialog.getByLabel('Наименование операции',{exact:true}).fill(`Операция ${name}`);
-    await dialog.getByLabel('Материал',{exact:true}).fill(`Материал ${i+1}`);
+    await dialog.getByLabel('Наименование',{exact:true}).fill(`Операция ${name}`);
+    await dialog.getByLabel('Материал 1',{exact:true}).fill(`Материал ${i+1}`);
     await dialog.getByLabel('Количество',{exact:true}).fill(String(i+1));
     await dialog.getByLabel('Единица измерения',{exact:true}).fill('шт.');
     await dialog.getByLabel('Комментарий',{exact:true}).fill(`Комментарий ${name}`);
@@ -54,11 +54,27 @@ export async function verifyMirror({page,prisma,request,cookie,check,root}) {
   await page.waitForTimeout(150);
   check(await dialog.locator('.react-flow__edge').count()===1,'Graph connects two blocks by dragging their handles');
   for(const [source,target] of links.slice(1)){
+    if(source===3&&target===4){
+      const output=await dialog.locator(`.react-flow__node[data-id="${ids[source]}"] .source`).boundingBox();
+      const card=await dialog.locator(`.react-flow__node[data-id="${ids[target]}"]`).boundingBox();
+      await page.mouse.move(output.x+output.width/2,output.y+output.height/2);await page.mouse.down();await page.mouse.move(card.x+card.width/2,card.y+card.height/2,{steps:15});await page.mouse.up();
+      await page.waitForTimeout(150);
+      check(await dialog.locator('.react-flow__edge').count()===3,'Bending connects to welding by dropping on card body and preserves saw input');
+      continue;
+    }
     await dialog.locator(`.react-flow__node[data-id="${ids[source]}"]`).click();
     await dialog.getByLabel('Следующий блок',{exact:true}).selectOption(ids[target]);
     await dialog.getByRole('button',{name:'Добавить связь',exact:true}).click();
   }
   // A reversed link must not turn the DAG into a cycle.
+  await dialog.locator(`.react-flow__node[data-id="${ids[3]}"]`).click();
+  assert.equal(await dialog.getByLabel('Наименование',{exact:true}).inputValue(),'Операция Лазер');
+  assert.equal(await dialog.getByLabel('Материал 1',{exact:true}).inputValue(),'Материал 2');
+  check(true,'Connecting a card copies its name and material');
+  await dialog.locator(`.react-flow__node[data-id="${ids[7]}"]`).click();
+  assert.equal(await dialog.getByLabel('Наименование',{exact:true}).inputValue(),'');
+  assert.deepEqual((await dialog.locator('.graph-material-fields input').evaluateAll(inputs=>inputs.map(input=>input.value))).sort(),['Материал 1','Материал 2','Материал 3']);
+  check(true,'Joining branches clears the name and combines incoming materials');
   await dialog.locator(`.react-flow__node[data-id="${ids[8]}"]`).click();
   await dialog.getByLabel('Следующий блок',{exact:true}).selectOption(ids[0]);
   await dialog.getByRole('button',{name:'Добавить связь',exact:true}).click();
@@ -67,8 +83,15 @@ export async function verifyMirror({page,prisma,request,cookie,check,root}) {
   await dialog.getByRole('button',{name:'Удалить связь',exact:true}).click();
   check(await dialog.locator('.react-flow__edge').count()===7,'Graph deletes a selected connection');
   await dialog.locator(`.react-flow__node[data-id="${ids[7]}"]`).click();await dialog.getByLabel('Следующий блок',{exact:true}).selectOption(ids[8]);await dialog.getByRole('button',{name:'Добавить связь',exact:true}).click();
-  await dialog.getByRole('button',{name:'ОТК',exact:true}).click();await dialog.getByRole('button',{name:'Удалить блок',exact:true}).click();
+  await dialog.getByRole('button',{name:'ОТК',exact:true}).click();await dialog.locator('.graph-card-delete').last().click();
   check(await dialog.locator('.react-flow__node').count()===9,'Removing an extra block preserves the mirror graph');
+  // Explicit manual changes remain editable after automatic connection defaults.
+  for(const [i,name] of names.entries()){
+    await dialog.locator(`.react-flow__node[data-id="${ids[i]}"]`).click();
+    await dialog.getByLabel('Наименование',{exact:true}).fill(`Операция ${name}`);
+    while(await dialog.locator('.graph-material-field').count()>1)await dialog.getByRole('button',{name:'Удалить материал 2',exact:true}).click();
+    await dialog.getByLabel('Материал 1',{exact:true}).fill(`Материал ${i+1}`);
+  }
   await dialog.getByRole('button',{name:'Выровнять схему',exact:true}).click();
   await page.waitForTimeout(300);
   await page.screenshot({path:join(root,'.local','mirror-route-graph.png'),fullPage:true});
@@ -89,9 +112,9 @@ export async function verifyMirror({page,prisma,request,cookie,check,root}) {
   await page.locator('.item-check input').check();await page.getByLabel('Маршрут',{exact:true}).selectOption(saved.id);await page.getByRole('button',{name:'Изменить',exact:true}).click();
   for(const [i,name] of names.entries()){
     await dialog.locator(`.react-flow__node[data-id="${byName.get(name).id}"]`).click();
-    assert.equal(await dialog.getByLabel('Материал',{exact:true}).inputValue(),`Материал ${i+1}`);
+    assert.equal(await dialog.getByLabel('Материал 1',{exact:true}).inputValue(),`Материал ${i+1}`);
     assert.equal(await dialog.getByLabel('Количество',{exact:true}).inputValue(),String(i+1));
-    assert.equal(await dialog.getByLabel('Наименование операции',{exact:true}).inputValue(),`Операция ${name}`);
+    assert.equal(await dialog.getByLabel('Наименование',{exact:true}).inputValue(),`Операция ${name}`);
     assert.equal(await dialog.getByLabel('Комментарий',{exact:true}).inputValue(),`Комментарий ${name}`);
     assert.equal(await dialog.locator('.graph-inspector fieldset').count(),i===0?3:1);
   }

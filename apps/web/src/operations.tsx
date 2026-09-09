@@ -34,10 +34,10 @@ function TaskCard({ task, onAction, onOpen, now }: { task: Operation; onAction: 
   </article>;
 }
 
-export function OperationsScreen({ planner = false, initialCenter = "", focusId = "" }: { planner?: boolean; initialCenter?: string; focusId?: string }) {
+export function OperationsScreen({ planner = false, initialCenter = "", focusId = "", initialStatus = "" }: { planner?: boolean; initialCenter?: string; focusId?: string; initialStatus?:string }) {
   const revision = useProductionEvents();
   const [centers, setCenters] = useState<{ id: string; name: string }[]>([]), [center, setCenter] = useState(initialCenter);
-  const [search, setSearch] = useState(""), [status, setStatus] = useState(""), [page, setPage] = useState(1);
+  const [search, setSearch] = useState(""), [status, setStatus] = useState(initialStatus), [page, setPage] = useState(1);
   const [data, setData] = useState<{ items: Operation[]; total: number; counts: Record<string, number> }>({ items: [], total: 0, counts: {} });
   const [error, setError] = useState(""), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
   const [modal, setModal] = useState<{ task: Operation; action: string } | null>(null), [opened, setOpened] = useState<Operation | null>(null);
