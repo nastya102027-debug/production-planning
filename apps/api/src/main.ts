@@ -123,7 +123,7 @@ app.get("/api/orders", auth, planner, async (req, res) => {
   const query = z.object({ search: z.string().trim().max(100).optional(), archived: z.enum(["true", "false"]).optional() }).parse(req.query);
   const orders = await prisma.order.findMany({
     where: {
-      archivedAt: query.archived === "true" ? { not: null } : null,
+      archivedAt: query.archived === "true" ? { not: null } : null, archiveClearedAt:null,
       ...(query.search ? { OR: [
         { productionOrderNumber: { contains: query.search, mode: "insensitive" } },
         { customerOrderNumber: { contains: query.search, mode: "insensitive" } },
@@ -215,13 +215,23 @@ app.put("/api/orders/:id", auth, planner, async (req, res) => {
   res.json(presentOrder(order));
 });
 
+app.post("/api/archive/clear", auth, planner, async(req,res)=>{
+  const input=z.union([z.object({all:z.literal(true)}).strict(),z.object({id:z.string().uuid(),updatedAt:z.string().datetime()}).strict()]).parse(req.body);
+  const result=await prisma.$transaction(async tx=>{
+    const cleared=await tx.order.updateMany({where:{archivedAt:{not:null},archiveClearedAt:null,...('id' in input?{id:input.id,updatedAt:new Date(input.updatedAt)}:{})},data:{archiveClearedAt:new Date()}});
+    if('id' in input&&!cleared.count)throw new ProductionError(409,"Запись уже изменена или отсутствует в архиве. Обновите список");
+    await tx.auditLog.create({data:{actorId:req.session!.sub,action:"ARCHIVE_CLEARED",entityType:"Order",...('id' in input?{entityId:input.id}:{}),after:{...input,count:cleared.count}}});
+    return cleared;
+  });res.json(result);
+});
+
 app.patch("/api/orders/:id/archive", auth, planner, async (req, res) => {
   const id = z.string().uuid().parse(req.params.id);
   const input = z.object({ archived: z.boolean(), updatedAt: z.string().datetime() }).parse(req.body);
   const order = await prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`;
     const before = await tx.order.findUnique({ where: { id } });
-    if (!before) throw new ProductionError(404, "Заказ не найден");
+    if (!before || before.archiveClearedAt) throw new ProductionError(404, "Заказ не найден в архиве");
     if (before.updatedAt.toISOString() !== input.updatedAt) throw new ProductionError(409, "Заказ изменён. Обновите список");
     const updated = await tx.order.update({ where: { id }, data: { archivedAt: input.archived ? new Date() : null }, include: { items: true } });
     await tx.auditLog.create({ data: { actorId: req.session!.sub, action: input.archived ? "ORDER_ARCHIVED" : "ORDER_RESTORED", entityType: "Order", entityId: id } });

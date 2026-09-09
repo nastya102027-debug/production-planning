@@ -102,6 +102,7 @@ model Order {
   dueDate DateTime?
   comment String?
   archivedAt DateTime?
+  archiveClearedAt DateTime?
   items OrderItem[]
   procurement Procurement?
   launches ProductionLaunch[]

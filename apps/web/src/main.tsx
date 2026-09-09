@@ -133,20 +133,25 @@ function OrderForm({onClose,onCreated,existing}:{onClose:()=>void;onCreated:(ord
 }
 
 function OrdersScreen() {
+  const [clearing,setClearing]=useState(false),[notice,setNotice]=useState("");
   const [orders,setOrders]=useState<Order[]>([]); const [loading,setLoading]=useState(true); const [search,setSearch]=useState(""); const [showForm,setShowForm]=useState(false); const [editing,setEditing]=useState<Order>(); const [archived,setArchived]=useState(false); const [error,setError]=useState("");
   const load=()=>{setLoading(true);return api<Order[]>(`/orders?archived=${archived}&search=${encodeURIComponent(search)}`).then(setOrders).catch(e=>setError(e.message)).finally(()=>setLoading(false));};
   async function archive(order:Order){if(!window.confirm(archived?"Вернуть заказ в работу?":"Переместить заказ в архив? Существующие производственные задачи продолжат выполняться."))return;try{await api(`/orders/${order.id}/archive`,{method:"PATCH",body:JSON.stringify({archived:!archived,updatedAt:order.updatedAt})});await load();}catch(e){setError(e instanceof Error?e.message:"Ошибка сохранения");}}
+  async function clearArchive(order?:Order){
+    if(clearing||!window.confirm(order?`Очистить запись «Производство № ${order.productionOrderNumber}»? Она исчезнет из архива, восстановление из списка станет недоступно. Производственные задачи и история сохранятся.`:"Очистить весь архив, включая записи вне текущего поиска? Восстановление из списка станет недоступно. Производственные задачи и история сохранятся."))return;
+    setClearing(true);setError("");setNotice("");try{const result=await api<{count:number}>("/archive/clear",{method:"POST",body:JSON.stringify(order?{id:order.id,updatedAt:order.updatedAt}:{all:true})});setNotice(`Очищено записей: ${result.count}`);await load();}catch(e){setError((e as Error).message);}finally{setClearing(false);}
+  }
   useEffect(()=>{void load();},[archived]);
   return <div className="content orders-page">
     <div className="page-actions"><div><p className="kicker">ЗАКАЗЫ</p><h2>Портфель заказов</h2></div><div><label className="order-search"><Search/><input placeholder="Номер производства или покупателя" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load()}/></label><button className="primary" onClick={()=>{setEditing(undefined);setShowForm(true);}}><Plus/> Новый заказ</button></div></div>
-    <div className="page-actions"><button className="secondary" onClick={()=>setArchived(!archived)}>{archived?"Показать активные заказы":"Открыть архив"}</button><button className="secondary" onClick={()=>void load()}>Обновить список</button></div>{error&&<p className="error" role="alert">{error}</p>}
+    <div className="page-actions"><button className="secondary" disabled={clearing} onClick={()=>{setArchived(!archived);setNotice("");}}>{archived?"Показать активные заказы":"Открыть архив"}</button><button className="secondary" onClick={()=>void load()}>Обновить список</button>{archived&&<button className="secondary" disabled={clearing||loading} onClick={()=>void clearArchive()}>{clearing?"Очищаю…":"Очистить всё"}</button>}</div>{notice&&<p role="status">{notice}</p>}{error&&<p className="error" role="alert">{error}</p>}
     <div className="order-table">
       <div className="order-row heading"><span>Заказ / организация</span><span>Срок</span><span>Статус</span><span>Позиции</span><span>Готово</span><span>Стоимость</span></div>
-      {loading?<div className="table-empty">Загрузка…</div>:orders.length===0?<div className="table-empty"><ClipboardList/><b>Заказов пока нет</b><span>Создайте первый заказ вручную</span></div>:orders.map(order=><div className="order-row" key={order.id}>
+      {loading?<div className="table-empty">Загрузка…</div>:orders.length===0?<div className="table-empty"><ClipboardList/><b>{archived?"Архив пуст":"Заказов пока нет"}</b><span>{archived?"Нет записей по текущему поиску":"Создайте первый заказ вручную"}</span></div>:orders.map(order=><div className="order-row" key={order.id}>
         <span><b>Производство № {order.productionOrderNumber}</b><small>Заказ покупателя № {order.customerOrderNumber||"—"}</small>{order.organization&&<i className={`organization-badge org-${order.organization.toLowerCase()}`}>{organizationLabel[order.organization]}</i>}</span>
         <span><b>{displayDate(order.dueDate)}</b>{order.drawingApprovalDate&&<small>Согласовано: {displayDate(order.drawingApprovalDate)} · {order.productionLeadDays} раб. дн.</small>}</span>
         <span><i className={`status ${order.status.toLowerCase()}`}>{statusLabel[order.status]||order.status}</i><small>{priorityLabel[order.priority]}</small></span>
-        <span>{order.items.length}</span><span>{money(order.completedTotal)}</span><span><b>{money(order.total)}</b>{!archived&&<button className="secondary" onClick={()=>{setEditing(order);setShowForm(true);}}>Изменить</button>}<button className="secondary" onClick={()=>void archive(order)}>{archived?"Восстановить":"В архив"}</button></span>
+        <span>{order.items.length}</span><span>{money(order.completedTotal)}</span><span><b>{money(order.total)}</b>{!archived&&<button className="secondary" onClick={()=>{setEditing(order);setShowForm(true);}}>Изменить</button>}<button className="secondary" disabled={clearing} onClick={()=>void archive(order)}>{archived?"Восстановить":"В архив"}</button>{archived&&<button className="secondary" disabled={clearing} onClick={()=>void clearArchive(order)}>Очистить</button>}</span>
       </div>)}
     </div>
     {showForm&&<OrderForm existing={editing} onClose={()=>setShowForm(false)} onCreated={()=>{setShowForm(false);void load();}}/>}
