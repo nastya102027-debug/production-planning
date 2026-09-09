@@ -1,6 +1,6 @@
 import {finishInCalendar,type WorkCalendar} from "./work-calendar.js";
-type Stage={calendar?:WorkCalendar|null;id:string;title:string;status:string;normHours:number|null;riskHours:number|null;workHours:number;start:Date|null;due:Date|null;predecessors:string[]};
-type Result={finish:string|null;reserveHours:number|null;state:string;reason?:string};
+export type Stage={calendar?:WorkCalendar|null;id:string;title:string;status:string;normHours:number|null;riskHours:number|null;workHours:number;start:Date|null;due:Date|null;predecessors:string[]};
+export type Result={finish:string|null;reserveHours:number|null;state:string;reason?:string};
 export function forecast(rows:Stage[],now:Date):Record<string,Result>{
   const results:Record<string,Result>={},visiting=new Set<string>(),byId=new Map(rows.map(row=>[row.id,row]));
   function visit(id:string):Result{

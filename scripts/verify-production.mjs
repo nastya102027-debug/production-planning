@@ -217,6 +217,7 @@ try {
     await planDialog.getByRole('button',{name:'Закрыть планирование',exact:true}).click();
     await page.getByRole('button',{name:'Рабочий календарь участка',exact:true}).click();
     const calendarDialog=page.getByRole('dialog',{name:'Рабочий календарь',exact:true});
+    await calendarDialog.getByLabel('Одновременно выполняемых задач',{exact:true}).fill('2');
     await calendarDialog.getByLabel('Учитывать рабочие смены',{exact:true}).check();
     await calendarDialog.getByLabel('Смещение от UTC, ч',{exact:true}).fill('3');
     await calendarDialog.getByRole('button',{name:'Добавить смену',exact:true}).click();
@@ -225,6 +226,7 @@ try {
     await calendarDialog.waitFor({state:'hidden'});
     await page.getByRole('button',{name:'Рабочий календарь участка',exact:true}).click();
     await calendarDialog.getByLabel('Выходные даты',{exact:true}).waitFor();
+    check(await calendarDialog.getByLabel('Одновременно выполняемых задач',{exact:true}).inputValue()==='2','Browser saves and reopens center capacity');
     check(await calendarDialog.getByLabel('Смещение от UTC, ч',{exact:true}).inputValue()==='3' && await calendarDialog.getByLabel('Выходные даты',{exact:true}).inputValue()==='2026-12-31' && await calendarDialog.getByLabel('Начало',{exact:true}).inputValue()==='09:00','Browser saves and reopens calendar shifts timezone and holidays');
     await calendarDialog.getByRole('button',{name:'Закрыть календарь',exact:true}).click();
     await page.getByRole('button',{name:'Закрыть карточку',exact:true}).click();
@@ -272,6 +274,16 @@ try {
     check(true,'Browser clears one archive row and all remaining archive rows');
     check(errors.length === 0, "Browser has no uncaught JavaScript errors");
   }
+  const capacityOrder=await prisma.order.create({data:{productionOrderNumber:'TEST-CAPACITY',items:{create:{name:'Проверка очереди',quantity:1,unitPrice:0}}},include:{items:true}});
+  const capacityRoute=await prisma.route.create({data:{orderItemId:capacityOrder.items[0].id,name:'Тест загрузки'}});
+  const capacityLaunch=await prisma.productionLaunch.create({data:{orderId:capacityOrder.id,number:'TEST-CAPACITY',items:{create:{orderItemId:capacityOrder.items[0].id,routeId:capacityRoute.id,quantity:1}}},include:{items:true}});
+  const isolatedCenter=await prisma.workCenter.create({data:{name:'Тест вместимости',parallelSlots:1}});
+  const competitor=await prisma.operation.create({data:{launchItemId:capacityLaunch.items[0].id,workCenterId:isolatedCenter.id,title:'Другой заказ',quantity:1,normHours:2,queueOrder:-100}});
+  const queued=await prisma.operation.create({data:{launchItemId:first.launchItemId,workCenterId:isolatedCenter.id,title:'Ожидающая задача',quantity:1,normHours:3}});
+  const capacityResult=await request(`/operations/${queued.id}/forecast`,cookie);
+  check(capacityResult.data.stage.queueHours===2 && capacityResult.data.stage.afterTask===competitor.title,'Forecast includes queue competition from another order');
+  await prisma.workCenter.update({where:{id:isolatedCenter.id},data:{parallelSlots:2}});
+  check((await request(`/operations/${queued.id}/forecast`,cookie)).data.stage.queueHours===0,'Increasing capacity allows parallel tasks');
   const archiveFixture=await prisma.order.create({data:{productionOrderNumber:'TEST-CLEAR',archivedAt:new Date(),items:{create:{name:'Архивная деталь',quantity:1,unitPrice:10}}},include:{items:true}});
   check((await request('/archive/clear',workerCookie,{all:true})).status===403,'Employee cannot clear archive');
   check((await request('/archive/clear',cookie,{id:order.id,updatedAt:order.updatedAt})).status===409,'Active order cannot be cleared');

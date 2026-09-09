@@ -72,6 +72,7 @@ model User {
 model WorkCenter {
   calendar Json?
   calendarVersion Int @default(0)
+  parallelSlots Int?
   id String @id @default(uuid())
   name String @unique
   active Boolean @default(true)
