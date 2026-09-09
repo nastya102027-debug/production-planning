@@ -1,13 +1,14 @@
 import type {Result} from './forecast.js';
 type Item={id:string;name:string;quantity:number;completedQuantity:number;launchItems:{quantity:number;operations:{id:string;status:string}[]}[]};
-export function summarizeOrderForecast(order:{dueDate:Date|null;forecastRiskHours:number|null;items:Item[]},results:Record<string,Result>,now:Date){
+export function summarizeOrderForecast(order:{dueDate:Date|null;forecastRiskHours:number|null;items:Item[]},results:Record<string,Result>,now:Date,remainingOperations:Record<string,{id:string;status:string}[]>={}){
   const reasons:string[]=[],items=order.items.map(item=>{
     const remaining=Math.max(0,item.quantity-item.launchItems.reduce((sum,launch)=>sum+launch.quantity,0));
     const unfinished=item.completedQuantity<item.quantity;
     const blockers:string[]=[];
-    if(unfinished&&remaining>0)blockers.push(`Не запущено: ${remaining} шт. Нет плана изготовления оставшегося количества`);
+    const plannedRemaining=remaining>0&&!!remainingOperations[item.id]?.length;
+    if(unfinished&&remaining>0&&!plannedRemaining)blockers.push(`Не запущено: ${remaining} шт. Нет плана изготовления оставшегося количества`);
     let latest=now.getTime();
-    if(unfinished)for(const launch of item.launchItems){
+    if(unfinished)for(const launch of [...item.launchItems,...(plannedRemaining?[{quantity:remaining,operations:remainingOperations[item.id]}]:[])]){
       if(!launch.operations.length)blockers.push('В запуске отсутствуют производственные задачи');
       for(const operation of launch.operations){
         if(operation.status==='COMPLETED')continue;
@@ -17,7 +18,7 @@ export function summarizeOrderForecast(order:{dueDate:Date|null;forecastRiskHour
       }
     }
     const unique=[...new Set(blockers)];for(const reason of unique)reasons.push(`${item.name}: ${reason}`);
-    return {id:item.id,name:item.name,remaining,completed:!unfinished,finish:unique.length||!unfinished?null:new Date(latest).toISOString(),reasons:unique};
+    return {id:item.id,name:item.name,remaining,plannedRemaining,completed:!unfinished,finish:unique.length||!unfinished?null:new Date(latest).toISOString(),reasons:unique};
   });
   if(!items.length)reasons.push('В заказе нет позиций');
   const completed=items.length>0&&items.every(item=>item.completed);

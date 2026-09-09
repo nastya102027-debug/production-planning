@@ -1,3 +1,4 @@
+import {remainingPlanInput,remainingTasks} from "./remaining-plan.js";
 import {summarizeOrderForecast} from "./order-forecast.js";
 import {calendarInput} from "./work-calendar.js";
 import {capacityForecast,relatedTasks} from "./capacity-forecast.js";
@@ -95,8 +96,9 @@ export function productionRouter(prisma: PrismaClient) {
         const route = item.routes.find(route => route.id === requested.routeId)!;
         const launchItem = await tx.productionLaunchItem.create({ data: { launchId: created.id, ...requested } });
         const operationByStep = new Map<string, string>();
+        const savedPlan=remainingPlanInput.safeParse(item.remainingPlan);
         for (const step of route.steps) {
-          const operation = await tx.operation.create({ data: { launchItemId: launchItem.id, workCenterId: step.workCenterId, title: step.title || step.workCenter.name, quantity: requested.quantity, priority: input.priority, dueDate: input.plannedFinish ? new Date(input.plannedFinish) : order.dueDate, comment: item.comment,
+          const operation = await tx.operation.create({ data: { launchItemId: launchItem.id, normHours:savedPlan.success&&savedPlan.data.routeId===route.id?(savedPlan.data.steps.find(s=>s.stepId===step.id)?.hoursPerUnit??0)*requested.quantity||null:null, workCenterId: step.workCenterId, title: step.title || step.workCenter.name, quantity: requested.quantity, priority: input.priority, dueDate: input.plannedFinish ? new Date(input.plannedFinish) : order.dueDate, comment: item.comment,
             statusHistory: { create: { changedById: req.session!.sub, toStatus: "QUEUED" } } } });
           operationByStep.set(step.id, operation.id);
         }
@@ -152,6 +154,32 @@ export function productionRouter(prisma: PrismaClient) {
       return after;
     });publish([id]);res.json(center);
   });
+  router.get("/order-items/:id/remaining-plan",plannerOnly,async(req,res)=>{
+    const item=await prisma.orderItem.findFirst({where:{id:z.string().uuid().parse(req.params.id),order:{archivedAt:null}},include:{launchItems:{select:{quantity:true}},routes:{where:{active:true},include:routeInclude,orderBy:{version:'desc'}}}});
+    if(!item)throw new ProductionError(404,"Позиция не найдена");
+    res.json({plan:item.remainingPlan,version:item.remainingPlanVersion,remaining:Math.max(0,item.quantity-item.launchItems.reduce((sum,l)=>sum+l.quantity,0)),routes:item.routes});
+  });
+  router.put("/order-items/:id/remaining-plan",plannerOnly,async(req,res)=>{
+    const id=z.string().uuid().parse(req.params.id),input=z.object({version:z.number().int().nonnegative(),plan:remainingPlanInput.nullable()}).strict().parse(req.body);
+    await prisma.$transaction(async tx=>{
+      const owner=await tx.orderItem.findUnique({where:{id},select:{orderId:true}});
+      if(!owner)throw new ProductionError(404,"Позиция не найдена");
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${owner.orderId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM "OrderItem" WHERE id = ${id} FOR UPDATE`;
+      const item=await tx.orderItem.findFirst({where:{id,order:{archivedAt:null}},include:{launchItems:{select:{quantity:true}}}});
+      if(!item)throw new ProductionError(404,"Позиция не найдена");
+      if(item.remainingPlanVersion!==input.version)throw new ProductionError(409,"План изменён. Откройте форму заново");
+      if(input.plan){
+        const remaining=item.quantity-item.launchItems.reduce((sum,l)=>sum+l.quantity,0);
+        if(remaining<=0)throw new ProductionError(409,"Вся позиция уже запущена");
+        const route=await tx.route.findFirst({where:{id:input.plan.routeId,orderItemId:id,active:true},include:{steps:true}});
+        if(!route||new Set(input.plan.steps.map(s=>s.stepId)).size!==route.steps.length||input.plan.steps.length!==route.steps.length||route.steps.some(s=>!input.plan!.steps.some(n=>n.stepId===s.id)))throw new ProductionError(400,"Выберите маршрут этой позиции и заполните все нормативы");
+        if(input.plan.steps.some(step=>step.hoursPerUnit*remaining>100000))throw new ProductionError(400,"Норматив этапа на весь остаток не должен превышать 100000 часов");
+      }
+      await tx.orderItem.update({where:{id},data:{remainingPlan:input.plan??Prisma.DbNull,remainingPlanVersion:{increment:1}}});
+      await tx.auditLog.create({data:{actorId:req.session!.sub,action:"REMAINING_PLAN_UPDATED",entityType:"OrderItem",entityId:id,before:{plan:item.remainingPlan},after:input}});
+    });publish();res.sendStatus(204);
+  });
   router.patch("/orders/:id/forecast-settings",plannerOnly,async(req,res)=>{
     const id=z.string().uuid().parse(req.params.id);
     const input=z.object({riskHours:z.number().finite().min(0).max(100000).nullable(),updatedAt:z.string().datetime()}).strict().parse(req.body);
@@ -163,23 +191,38 @@ export function productionRouter(prisma: PrismaClient) {
   });
   router.get("/orders/:id/forecast",plannerOnly,async(req,res)=>{
     const id=z.string().uuid().parse(req.params.id),now=new Date();
-    const order=await prisma.order.findFirst({where:{id,archivedAt:null},include:{procurement:true,items:{include:{launchItems:{include:{operations:{select:{id:true,status:true}}}}}}}});
+    const order=await prisma.order.findFirst({where:{id,archivedAt:null},include:{procurement:true,items:{include:{routes:{include:{steps:{include:{workCenter:true,predecessors:true}}}},launchItems:{include:{operations:{select:{id:true,status:true}}}}}}}});
     if(!order)throw new ProductionError(404,"Заказ не найден");
     const rows=await prisma.operation.findMany({where:{status:{in:["QUEUED","IN_PROGRESS","PAUSED"]}},include:{workCenter:true,timeEntries:true,predecessors:{include:{predecessor:{select:{status:true}}}},launchItem:{select:{launch:{select:{plannedStart:true}},orderItem:{select:{order:{select:{id:true,procurement:true}}}}}}}});
     const procurementBlocks=new Map<string,string>();
-    const tasks=rows.map(row=>{
+    const tasks:Parameters<typeof capacityForecast>[0]=rows.map(row=>{
       const procurement=row.launchItem.orderItem.order.procurement;
       const waiting=row.status==='QUEUED'&&procurement&&!['READY','NOT_REQUIRED'].includes(procurement.status);
       if(waiting&&(!procurement.expectedAt||procurement.expectedAt<=now))procurementBlocks.set(row.id,'Уточните ожидаемую дату готовности закупки');
       const start=row.plannedStart??row.launchItem.launch.plannedStart;
       return {id:row.id,title:row.title,workCenterId:row.workCenterId,parallelSlots:row.workCenter.parallelSlots,queueOrder:row.queueOrder,priority:row.priority,calendar:row.workCenter.calendar?calendarInput.parse(row.workCenter.calendar):null,status:row.status,normHours:procurementBlocks.has(row.id)?null:row.normHours,riskHours:row.riskHours,workHours:elapsedSeconds(row.timeEntries,now)/3600,start:waiting&&procurement.expectedAt?new Date(Math.max(start?.getTime()??0,procurement.expectedAt.getTime())):start,due:row.plannedFinish??row.dueDate,predecessors:row.predecessors.filter(p=>p.predecessor.status!=='COMPLETED').map(p=>p.predecessorId)};
     });
+    const remainingOperations:Record<string,{id:string;status:string}[]>={};
+    const virtualCenters:{id:string;name:string;calendar:unknown;parallelSlots:number|null}[]=[];
+    for(const item of order.items){
+      const quantity=Math.max(0,item.quantity-item.launchItems.reduce((sum,l)=>sum+l.quantity,0));
+      if(!quantity)continue;
+      const plan=remainingPlanInput.safeParse(item.remainingPlan);
+      const route=plan.success?item.routes.find(route=>route.id===plan.data.routeId):undefined;
+      const waiting=order.procurement&&!['READY','NOT_REQUIRED'].includes(order.procurement.status);
+      const virtual=remainingTasks(item,route,quantity,waiting?order.procurement!.expectedAt:null,order.priority,order.dueDate);
+      if(!virtual)continue;
+      for(const task of virtual){if(waiting&&(!order.procurement!.expectedAt||order.procurement!.expectedAt<=now)){task.normHours=0;procurementBlocks.set(task.id,'Уточните ожидаемую дату готовности закупки');}}
+      tasks.push(...virtual);remainingOperations[item.id]=virtual.map(task=>({id:task.id,status:task.status}));
+      for(const step of route!.steps)virtualCenters.push({...step.workCenter});
+    }
     const targetIds=new Set(order.items.flatMap(item=>item.launchItems.flatMap(launch=>launch.operations.map(op=>op.id))));
+    for(const ops of Object.values(remainingOperations))for(const op of ops)targetIds.add(op.id);
     const relevantIds=new Set<string>();for(const target of targetIds)for(const task of relatedTasks(tasks,target))relevantIds.add(task.id);
     const relevant=tasks.filter(task=>relevantIds.has(task.id));
     const estimates=capacityForecast(relevant,now);
     for(const [id,reason] of procurementBlocks)if(estimates[id])estimates[id]={finish:null,reserveHours:null,state:'UNKNOWN',reason};
-    res.json({...summarizeOrderForecast(order,estimates,now),dueDate:order.dueDate,riskHours:order.forecastRiskHours,updatedAt:order.updatedAt,asOf:now,procurement:order.procurement?{status:order.procurement.status,expectedAt:order.procurement.expectedAt}:null,continuousCenters:[...new Set(rows.filter(row=>relevantIds.has(row.id)&&!row.workCenter.calendar).map(row=>row.workCenter.name))],unlimitedCenters:[...new Set(rows.filter(row=>relevantIds.has(row.id)&&!row.workCenter.parallelSlots).map(row=>row.workCenter.name))]});
+    res.json({...summarizeOrderForecast(order,estimates,now,remainingOperations),dueDate:order.dueDate,riskHours:order.forecastRiskHours,updatedAt:order.updatedAt,asOf:now,procurement:order.procurement?{status:order.procurement.status,expectedAt:order.procurement.expectedAt}:null,continuousCenters:[...new Set([...rows.filter(row=>relevantIds.has(row.id)&&!row.workCenter.calendar).map(row=>row.workCenter.name),...virtualCenters.filter(c=>!c.calendar).map(c=>c.name)])],unlimitedCenters:[...new Set([...rows.filter(row=>relevantIds.has(row.id)&&!row.workCenter.parallelSlots).map(row=>row.workCenter.name),...virtualCenters.filter(c=>!c.parallelSlots).map(c=>c.name)])]});
   });
   router.get("/operations/:id/forecast", plannerOnly, async (req,res)=>{
     const operation=await prisma.operation.findUnique({where:{id:z.string().uuid().parse(req.params.id)}});

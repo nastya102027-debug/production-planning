@@ -115,6 +115,8 @@ model Order {
 }
 
 model OrderItem {
+  remainingPlan Json?
+  remainingPlanVersion Int @default(0)
   id String @id @default(uuid())
   orderId String
   order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
