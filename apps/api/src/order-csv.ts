@@ -38,3 +38,11 @@ export function previewOrderCsv(text: string) {
   }
   return { rows: Math.max(0, rows.length - 1), errors: errors.slice(0, 50) };
 }
+
+export type ImportedOrder = { productionOrderNumber:string; customerOrderNumber:string|null; organization:"IP_VETROV"|"LATUNING"|"ECONTRID"|null; status:"DRAFT"|"PROCUREMENT"|"READY_FOR_LAUNCH"|"IN_PRODUCTION"|"PARTIALLY_READY"|"COMPLETED"; dueDate:string|null; items:{name:string;quantity:number;unitPrice:number}[] };
+export function parseImportedOrders(text:string):ImportedOrder[] {
+  const preview=previewOrderCsv(text); if(preview.errors.length) throw new Error("CSV содержит ошибки");
+  const groups=new Map<string,ImportedOrder>();
+  for(const row of parseCsv(text.replace(/^\uFEFF/,"")).slice(1)){const [number,customer,organization,status,dueDate,name,quantity,unitPrice]=row;let order=groups.get(number);if(!order){order={productionOrderNumber:number.trim(),customerOrderNumber:customer.trim()||null,organization:(organization||null) as ImportedOrder["organization"],status:(status||"DRAFT") as ImportedOrder["status"],dueDate:dueDate||null,items:[]};groups.set(number,order);}order.items.push({name:name.trim(),quantity:Number(quantity),unitPrice:Number(unitPrice)});}
+  return [...groups.values()];
+}

@@ -14,7 +14,7 @@ import { productionRouter } from "./production.js";
 import { ProductionError } from "./production-rules.js";
 import { staffRouter } from "./staff.js";
 import { dashboardTotals } from "./dashboard.js";
-import { previewOrderCsv } from "./order-csv.js";
+import { parseImportedOrders, previewOrderCsv } from "./order-csv.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -178,6 +178,16 @@ app.get("/api/orders/export", auth, planner, async (req, res) => {
 app.post("/api/orders/import/preview", auth, planner, async (req, res) => {
   const csv = z.object({ csv: z.string().max(5_000_000) }).parse(req.body).csv;
   res.json(previewOrderCsv(csv));
+});
+
+app.post("/api/orders/import", auth, planner, async (req, res) => {
+  const csv=z.object({csv:z.string().max(5_000_000)}).parse(req.body).csv, preview=previewOrderCsv(csv);
+  if(preview.errors.length)return res.status(400).json({message:"Исправьте ошибки в CSV перед импортом",errors:preview.errors});
+  const imported=parseImportedOrders(csv); if(!imported.length)return res.status(400).json({message:"В файле нет позиций заказов"});
+  const duplicates=await prisma.order.findMany({where:{productionOrderNumber:{in:imported.map(order=>order.productionOrderNumber)}},select:{productionOrderNumber:true}});
+  if(duplicates.length)return res.status(409).json({message:`Заказы уже существуют: ${duplicates.map(order=>order.productionOrderNumber).join(", ")}`});
+  await prisma.$transaction(async tx=>{for(const order of imported){const created=await tx.order.create({data:{productionOrderNumber:order.productionOrderNumber,customerOrderNumber:order.customerOrderNumber,organization:order.organization,status:order.status,dueDate:order.dueDate?parseDateOnly(order.dueDate):null,items:{create:order.items}}});await tx.auditLog.create({data:{actorId:req.session!.sub,action:"ORDER_IMPORTED",entityType:"Order",entityId:created.id,after:{productionOrderNumber:created.productionOrderNumber,itemCount:order.items.length}}});}});
+  res.status(201).json({orders:imported.length,items:preview.rows});
 });
 
 app.get("/api/orders/:id", auth, planner, async (req, res) => {
