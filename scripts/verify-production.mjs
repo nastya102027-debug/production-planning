@@ -62,6 +62,8 @@ try {
   check(!staffAudit.includes(staffPassword) && !staffAudit.includes(newStaffPassword) && !staffAudit.includes("passwordHash"), "Account audit contains no secrets or password hashes");
   const createdOrder = await request("/orders", cookie, { productionOrderNumber: "TEST-100", organization: "LATUNING", drawingApprovalDate: "2026-09-08", productionLeadDays: 10, items: [{ name: "Тестовая деталь", quantity: 10, unitPrice: 100 }] });
   assert.equal(createdOrder.status, 201); const order = createdOrder.data, item = order.items[0];
+  check((await request("/planner/search?q=TEST-100", workerCookie)).status === 403, "Employee cannot use global planner search");
+  check((await request("/planner/search?q=TEST-100", cookie)).data.items.some(item => item.type === "order" && item.id === order.id), "Global search finds orders");
   const exportedResponse = await fetch(`${base}/api/orders/export?search=TEST-100`, { headers: { Cookie: cookie } });
   const exportedCsv = await exportedResponse.text();
   check(exportedResponse.status === 200 && exportedCsv.includes("TEST-100") && exportedCsv.includes("Тестовая деталь"), "Planner can export orders as CSV");

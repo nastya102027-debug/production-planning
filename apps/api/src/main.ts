@@ -87,6 +87,17 @@ app.get("/api/planner/summary",auth,planner,async(_req,res)=>{
     prisma.operation.count({where:{status:{in:["QUEUED","IN_PROGRESS","PAUSED"]}}}),prisma.operation.count({where:{status:"PAUSED"}})
   ]);res.json({orders,inProcurement,operations,stopped});
 });
+app.get("/api/planner/search",auth,planner,async(req,res)=>{
+  const query=z.object({q:z.string().trim().min(2).max(100)}).parse(req.query).q;
+  const contains={contains:query,mode:"insensitive" as const};
+  const [orders,launches,operations,users]=await Promise.all([
+    prisma.order.findMany({where:{archivedAt:null,OR:[{productionOrderNumber:contains},{customerOrderNumber:contains},{items:{some:{name:contains}}}]},select:{id:true,productionOrderNumber:true,customerOrderNumber:true},take:6}),
+    prisma.productionLaunch.findMany({where:{number:contains},select:{id:true,number:true,order:{select:{productionOrderNumber:true}}},take:6}),
+    prisma.operation.findMany({where:{OR:[{title:contains},{launchItem:{orderItem:{name:contains}}}]},select:{id:true,title:true,workCenterId:true,launchItem:{select:{orderItem:{select:{name:true,order:{select:{productionOrderNumber:true}}}}}}},take:6}),
+    prisma.user.findMany({where:{role:"EMPLOYEE",active:true,OR:[{firstName:contains},{lastName:contains},{login:contains}]},select:{id:true,firstName:true,lastName:true},take:6})
+  ]);
+  res.json({items:[...orders.map(row=>({type:"order",id:row.id,title:`Заказ № ${row.productionOrderNumber}`,detail:row.customerOrderNumber||"Без номера покупателя"})),...launches.map(row=>({type:"launch",id:row.id,title:`Запуск № ${row.number}`,detail:`Заказ № ${row.order.productionOrderNumber}`})),...operations.map(row=>({type:"operation",id:row.id,centerId:row.workCenterId,title:row.title,detail:`${row.launchItem.orderItem.name} · заказ № ${row.launchItem.orderItem.order.productionOrderNumber}`})),...users.map(row=>({type:"employee",id:row.id,title:`${row.lastName} ${row.firstName}`,detail:"Сотрудник"}))]});
+});
 
 const orderItemInput = z.object({
   name: z.string().trim().min(1).max(200),
