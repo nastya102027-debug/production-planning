@@ -1,5 +1,5 @@
 import {productionAnalytics} from "./analytics.js";
-import {isDateOnly,parseDateOnly} from "./working-days.js";
+import {isDateOnly,parseDateOnly,subtractWorkingDays} from "./working-days.js";
 import {remainingPlanInput} from "./remaining-plan.js";
 import {calculateOrderForecast,forecastOrderInclude,forecastOperationsInclude} from "./order-forecast-service.js";
 import {forecastAttention} from "./forecast-attention.js";
@@ -15,7 +15,7 @@ const routeInput = z.object({ name: z.string().trim().min(1).max(200), steps: z.
   ...routeDetails, title: z.string().trim().min(1).max(200), workCenterId: z.string().uuid(), predecessorIndexes: z.array(z.number().int().nonnegative()).default([])
 })).min(1).max(100) });
 const launchInput = z.object({
-  number: z.string().trim().min(1).max(80), orderId: z.string().uuid(), priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]).default("NORMAL"),
+  number: z.string().trim().min(1).max(80).optional(), orderId: z.string().uuid(), priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]).default("NORMAL"),
   plannedStart: z.string().datetime().optional(), plannedFinish: z.string().datetime().optional(),
   items: z.array(z.object({ orderItemId: z.string().uuid(), routeId: z.string().uuid(), quantity: z.number().int().positive() })).min(1).max(200)
 });
@@ -85,6 +85,9 @@ export function productionRouter(prisma: PrismaClient) {
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${input.orderId} FOR UPDATE`;
       const order = await tx.order.findFirst({ where: { id: input.orderId, archivedAt: null }, include: { items: { include: { launchItems: true, routes: { where: { active: true }, include: routeInclude } } } } });
       if (!order) throw new ProductionError(404, "Заказ не найден");
+      const plannedFinish = order.dueDate ? subtractWorkingDays(order.dueDate, 3) : null;
+      if (input.plannedStart && plannedFinish && plannedFinish < new Date(input.plannedStart)) throw new ProductionError(400, "Плановое начало не может быть позже окончания производства");
+      const launchNumber = `${order.productionOrderNumber}-${(await tx.productionLaunch.count({ where: { orderId: order.id } })) + 1}`;
       for (const requested of input.items) {
         const item = order.items.find(item => item.id === requested.orderItemId);
         if (!item) throw new ProductionError(400, "Позиция не принадлежит заказу");
@@ -93,7 +96,7 @@ export function productionRouter(prisma: PrismaClient) {
         const remaining = item.quantity - item.launchItems.reduce((sum, launch) => sum + launch.quantity, 0);
         if (requested.quantity > remaining) throw new ProductionError(409, `Для позиции «${item.name}» доступно: ${remaining}`);
       }
-      const created = await tx.productionLaunch.create({ data: { orderId: input.orderId, number: input.number, priority: input.priority, plannedStart: input.plannedStart ? new Date(input.plannedStart) : null, plannedFinish: input.plannedFinish ? new Date(input.plannedFinish) : null } });
+      const created = await tx.productionLaunch.create({ data: { orderId: input.orderId, number: launchNumber, priority: input.priority, plannedStart: input.plannedStart ? new Date(input.plannedStart) : null, plannedFinish } });
       for (const requested of input.items) {
         const item = order.items.find(item => item.id === requested.orderItemId)!;
         const route = item.routes.find(route => route.id === requested.routeId)!;

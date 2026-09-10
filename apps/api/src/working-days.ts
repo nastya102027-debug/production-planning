@@ -31,3 +31,15 @@ export function addWorkingDays(start: Date, workingDays: number): Date {
   }
   return result;
 }
+
+export function subtractWorkingDays(start: Date, workingDays: number): Date {
+  if (!Number.isInteger(workingDays) || workingDays < 0) throw new Error("Некорректный срок производства");
+  const result = new Date(start);
+  let remaining = workingDays;
+  while (remaining > 0) {
+    result.setUTCDate(result.getUTCDate() - 1);
+    const weekday = result.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) remaining -= 1;
+  }
+  return result;
+}

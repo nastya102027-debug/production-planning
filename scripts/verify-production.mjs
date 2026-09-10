@@ -195,13 +195,13 @@ try {
     await dialog.getByRole("button", { name: "Сохранить маршрут" }).click();
     await dialog.waitFor({ state: "hidden" });
     check((await request(`/order-items/${uiItem.id}/routes`, cookie)).data[0].steps[0].workCenter.id === centerB.id, "Browser route reorder persists chosen stage sequence");
-    await page.getByLabel("Номер запуска", { exact: true }).fill("TEST-UI-LAUNCH");
+    check(await page.getByLabel("Номер запуска", { exact: true }).inputValue() === "Будет создан автоматически", "Launch number is generated automatically");
     await page.locator('.item-check input').check();
     await page.getByLabel("Количество", { exact: true }).fill("2");
     await page.getByRole("button", { name: "Запустить в производство", exact: true }).click();
     await page.getByRole("dialog", { name: "Проверка запуска" }).waitFor();
     await page.getByRole("button", { name: "Подтвердить запуск", exact: true }).click();
-    await page.getByText("Запуск № TEST-UI-LAUNCH создан. Задачи распределены по участкам.", { exact: true }).waitFor();
+    await page.locator(".planning-success").waitFor();
     check((await request("/planning/orders?search=TEST-UI", cookie)).data.items[0].items[0].launchedQuantity === 2, "Browser confirms partial launch and updates remaining quantity");
     await page.screenshot({ path: join(root, ".local", "planning-verified.png"), fullPage: true });
     await page.getByRole("button", { name: "Уведомления", exact: true }).click();
