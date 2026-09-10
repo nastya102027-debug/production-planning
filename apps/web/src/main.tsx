@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { AlertTriangle, Boxes, ClipboardList, Factory, LogOut, PackageCheck, Plus, Search, X, Clock } from "lucide-react";
 import "./styles.css";
 import "./interaction.css";
+import "./latuning-theme.css";
 import "./orders.css";
 import "./procurement.css";
 import { StaffScreen } from "./staff";
