@@ -1,3 +1,5 @@
+import { isDateOnly } from "./working-days.js";
+
 export const orderCsvHeaders = ["Производство №", "Заказ клиента №", "Организация", "Статус", "Срок", "Позиция", "Количество", "Цена за единицу", "Сумма"] as const;
 
 export function parseCsv(text: string): string[][] {
@@ -32,7 +34,7 @@ export function previewOrderCsv(text: string) {
     const quantity = Number(row[6]), price = Number(row[7]);
     if (!Number.isInteger(quantity) || quantity <= 0) errors.push(`Строка ${line}: количество должно быть положительным целым`);
     if (!Number.isFinite(price) || price < 0) errors.push(`Строка ${line}: цена должна быть неотрицательным числом`);
-    if (row[4] && !/^\d{4}-\d{2}-\d{2}$/.test(row[4])) errors.push(`Строка ${line}: неверный срок`);
+    if (row[4] && !isDateOnly(row[4])) errors.push(`Строка ${line}: неверный срок`);
   }
   return { rows: Math.max(0, rows.length - 1), errors: errors.slice(0, 50) };
 }

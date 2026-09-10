@@ -15,4 +15,7 @@ describe("order CSV", () => {
     const csv = `${header}\nP-1,C-1,LATUNING,DRAFT,2026-09-10,Рама,1,10,10\nP-1,C-2,LATUNING,DRAFT,2026-09-10,Лист,1,20,20`;
     expect(previewOrderCsv(csv).errors).toContain("Строка 3: реквизиты заказа отличаются от предыдущих строк");
   });
+  it("rejects impossible calendar dates", () => {
+    expect(previewOrderCsv(`${header}\nP-1,C-1,LATUNING,DRAFT,2026-02-30,Рама,1,10,10`).errors).toContain("Строка 2: неверный срок");
+  });
 });
