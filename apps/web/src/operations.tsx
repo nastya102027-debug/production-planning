@@ -38,7 +38,7 @@ function TaskCard({ task, onAction, onOpen, now }: { task: Operation; onAction: 
 export function OperationsScreen({ planner = false, initialCenter = "", focusId = "", initialStatus = "" }: { planner?: boolean; initialCenter?: string; focusId?: string; initialStatus?:string }) {
   const revision = useProductionEvents();
   const [centers, setCenters] = useState<{ id: string; name: string }[]>([]), [center, setCenter] = useState(initialCenter);
-  const [search, setSearch] = useState(""), [status, setStatus] = useState(initialStatus), [page, setPage] = useState(1);
+  const [search, setSearch] = useState(""), [status, setStatus] = useState(initialStatus), [assignee, setAssignee] = useState(""), [priorityFilter, setPriorityFilter] = useState(""), [page, setPage] = useState(1), [assignees,setAssignees]=useState<Assignee[]>([]);
   const [data, setData] = useState<{ items: Operation[]; total: number; counts: Record<string, number> }>({ items: [], total: 0, counts: {} });
   const [error, setError] = useState(""), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
   const [modal, setModal] = useState<{ task: Operation; action: string } | null>(null), [opened, setOpened] = useState<Operation | null>(null);
@@ -46,15 +46,16 @@ export function OperationsScreen({ planner = false, initialCenter = "", focusId 
   const [refresh, setRefresh] = useState(0), [view, setView] = useState<"board"|"timeline">("board");
   const [planning, setPlanning] = useState<Operation|null>(null);
   useEffect(() => { api<typeof centers>("/work-centers").then(setCenters).catch(error => setError(error.message)); }, []);
+  useEffect(() => { if(planner) api<(Assignee&{active:boolean})[]>("/staff").then(rows=>setAssignees(rows.filter(row=>row.active))).catch(error=>setError(error.message)); }, [planner]);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {
-      const query = new URLSearchParams({ search, page: String(page), ...(center ? { workCenterId: center } : {}), ...(status ? { status } : {}) });
+      const query = new URLSearchParams({ search, page: String(page), ...(center ? { workCenterId: center } : {}), ...(status ? { status } : {}), ...(assignee?{assigneeId:assignee}:{}), ...(priorityFilter?{priority:priorityFilter}:{}) });
       api<typeof data>(`/operations?${query}`).then(next => { if (active) { setData(next); setError(""); setOpened(current => current ? next.items.find(item => item.id === current.id) ?? current : null); } }).catch(error => { if (active) setError(error.message); }).finally(() => { if (active) setLoading(false); });
     }, 180);
     return () => { active = false; clearTimeout(timer); };
-  }, [center, search, page, status, revision, refresh]);
+  }, [center, search, page, status, assignee, priorityFilter, revision, refresh]);
   useEffect(() => {
     let active = true;
     if (focusId) api<Operation>(`/operations/${focusId}`).then(task => { if (active) setOpened(task); }).catch(error => { if (active) setError(error.message); });
@@ -75,7 +76,7 @@ export function OperationsScreen({ planner = false, initialCenter = "", focusId 
   const actionLabels: Record<string, string> = { start: "Начать работу", pause: "Остановить работу", resume: "Продолжить работу", complete: "Завершить работу", comment: "Добавить комментарий", problem: "Сообщить о проблеме" };
   return <div className="content production-board">
     <div className="board-heading"><div><p className="kicker">{planner ? "ПРОИЗВОДСТВЕННЫЕ УЧАСТКИ" : "МОИ ЗАДАЧИ"}</p><h2>{center ? centers.find(item => item.id === center)?.name : planner ? "Задачи производства" : "Мой участок"}</h2></div><span>{data.total} задач</span></div>
-    <div className="board-filters"><label><Factory size={16}/><select aria-label="Участок" value={center} onChange={event => { setCenter(event.target.value); setPage(1); }}><option value="">{planner ? "Все участки" : "Мои участки"}</option>{centers.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label><Search size={16}/><input aria-label="Поиск задач" placeholder="Заказ, позиция или запуск" value={search} onChange={event => { setSearch(event.target.value); setPage(1); }}/></label><select aria-label="Статус задач" value={status} onChange={event => { setStatus(event.target.value); setPage(1); }}><option value="">Все статусы</option>{Object.entries(labels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></div>
+    <div className="board-filters"><label><Factory size={16}/><select aria-label="Участок" value={center} onChange={event => { setCenter(event.target.value); setPage(1); }}><option value="">{planner ? "Все участки" : "Мои участки"}</option>{centers.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label><Search size={16}/><input aria-label="Поиск задач" placeholder="Заказ, позиция или запуск" value={search} onChange={event => { setSearch(event.target.value); setPage(1); }}/></label><select aria-label="Статус задач" value={status} onChange={event => { setStatus(event.target.value); setPage(1); }}><option value="">Все статусы</option>{Object.entries(labels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>{planner&&<select aria-label="Исполнитель задач" value={assignee} onChange={event=>{setAssignee(event.target.value);setPage(1);}}><option value="">Все исполнители</option>{assignees.map(person=><option key={person.id} value={person.id}>{person.lastName} {person.firstName}</option>)}</select>}<select aria-label="Приоритет задач" value={priorityFilter} onChange={event=>{setPriorityFilter(event.target.value);setPage(1);}}><option value="">Все приоритеты</option>{Object.entries(priorities).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></div>
     {error && <div role="alert" className="planning-error">{error}</div>}
     {planner&&<div className="view-switch" role="group" aria-label="Представление задач"><button className={view==="board"?"selected":"secondary"} onClick={()=>setView("board")}>Kanban</button><button className={view==="timeline"?"selected":"secondary"} onClick={()=>setView("timeline")}>Timeline</button></div>}
     {loading ? <p>Загрузка задач…</p> : view === "timeline" && planner ? <Timeline tasks={data.items} now={now} onOpen={task=>setOpened(task)}/> : <div className="kanban">{Object.entries(labels).map(([key, label]) => <section className={`kanban-column ${key.toLowerCase()}`} key={key}><h3>{label}<span>{data.counts[key] ?? 0}</span></h3>{data.items.filter(task => task.status === key).map(task => <TaskCard key={task.id} task={task} onAction={action} onOpen={() => setOpened(task)} now={now}/>)}{!data.items.some(task => task.status === key) && <p className="column-empty">{data.counts[key] ? "Задачи на другой странице" : "Нет задач"}</p>}</section>)}</div>}

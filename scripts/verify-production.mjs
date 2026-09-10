@@ -109,6 +109,7 @@ try {
   check((await request(`/operations/${first.id}/plan`, workerCookie, assignment, "PATCH")).status === 403, "Employee cannot assign tasks");
   const assigned = await request(`/operations/${first.id}/plan`, cookie, assignment, "PATCH");
   check(assigned.status===200 && assigned.data.assignee.id===employee.id && !JSON.stringify(assigned.data.assignee).includes("password"), "Planner assigns employee without exposing credentials");
+  check((await request(`/operations?assigneeId=${employee.id}&priority=HIGH`, cookie)).data.items.some(item=>item.id===first.id), "Planner filters tasks by assignee and priority");
   check((await request(`/operations/${first.id}`, workerCookie)).data.assignee.id===employee.id, "Assigned employee is visible on task");
   check((await request(`/operations/${first.id}/plan`, cookie, {...assignment,assigneeId:null,planVersion:3}, "PATCH")).data.assignee===null, "Planner can remove assignment");
   const employeeTasks = await request("/operations", workerCookie);
