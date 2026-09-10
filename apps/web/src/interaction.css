@@ -27,4 +27,9 @@ a[href]:hover { color: #a7422c; text-decoration-color: currentColor; }
 .graph-builder .react-flow__edge:hover path { stroke: #8f302b; stroke-width: 3; filter: drop-shadow(0 1px 2px #8f302b45); }
 .graph-builder .react-flow__edge:hover .react-flow__edge-text { fill: #8f302b; }
 .graph-builder .react-flow__edge.selected path { filter: drop-shadow(0 1px 2px #67221f50); }
+.integration-mapping { display:grid; gap:9px; max-width:860px; }
+.integration-mapping label { display:grid; grid-template-columns:minmax(180px,1fr) minmax(220px,1.4fr) 22px 90px; align-items:center; gap:14px; padding:14px 16px; background:#fff; border:1px solid #dce3dd; }
+.integration-mapping label:hover { border-color:var(--interactive-border); box-shadow:var(--interactive-shadow); }
+.integration-mapping span { display:grid; gap:3px; }.integration-mapping small { color:#748078; }.integration-mapping em { font-size:11px; font-style:normal; color:#607068; }
+@media(max-width:700px){.integration-mapping label{grid-template-columns:1fr 22px 90px}.integration-mapping span{grid-column:1/-1}}
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; scroll-behavior: auto !important; } }
