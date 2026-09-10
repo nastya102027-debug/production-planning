@@ -45,14 +45,14 @@ export function productionRouter(prisma: PrismaClient) {
   const plannerOnly = (req: any, _res: any, next: any) => { if (req.session.role !== "PLANNER") throw new ProductionError(403, "Недостаточно прав"); next(); };
 
   router.get("/order-items/:id/routes", plannerOnly, async (req, res) => {
-    res.json(await prisma.route.findMany({ where: { orderItemId: String(req.params.id), active: true }, include: routeInclude, orderBy: { version: "desc" } }));
+    res.json(await prisma.route.findMany({ where: { orderItemId: String(req.params.id), active: true, orderItem: { archivedAt: null, order: { archivedAt: null } } }, include: routeInclude, orderBy: { version: "desc" } }));
   });
   router.post("/order-items/:id/routes", plannerOnly, async (req, res) => {
     const input = req.body && "nodes" in req.body ? parseGraph(req.body) : routeInput.parse(req.body); validateSteps(input.steps);
     const orderItemId = String(req.params.id);
     const route = await prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM "OrderItem" WHERE id = ${orderItemId} FOR UPDATE`;
-      const item = await tx.orderItem.findFirst({ where: { id: orderItemId, order: { archivedAt: null } } });
+      const item = await tx.orderItem.findFirst({ where: { id: orderItemId, archivedAt: null, order: { archivedAt: null } } });
       if (!item) throw new ProductionError(404, "Позиция не найдена");
       const ids = [...new Set(input.steps.map(step => step.workCenterId))];
       if (await tx.workCenter.count({ where: { id: { in: ids }, active: true } }) !== ids.length) throw new ProductionError(400, "Участок не найден или отключён");
@@ -83,7 +83,7 @@ export function productionRouter(prisma: PrismaClient) {
     const launch = await prisma.$transaction(async tx => {
       // All launches of one order serialize before reading the remaining quantity.
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${input.orderId} FOR UPDATE`;
-      const order = await tx.order.findFirst({ where: { id: input.orderId, archivedAt: null }, include: { items: { include: { launchItems: true, routes: { where: { active: true }, include: routeInclude } } } } });
+      const order = await tx.order.findFirst({ where: { id: input.orderId, archivedAt: null }, include: { items: { where: { archivedAt: null }, include: { launchItems: true, routes: { where: { active: true }, include: routeInclude } } } } });
       if (!order) throw new ProductionError(404, "Заказ не найден");
       const plannedFinish = order.dueDate ? subtractWorkingDays(order.dueDate, 3) : null;
       if (input.plannedStart && plannedFinish && plannedFinish < new Date(input.plannedStart)) throw new ProductionError(400, "Плановое начало не может быть позже окончания производства");
@@ -164,7 +164,7 @@ export function productionRouter(prisma: PrismaClient) {
     });publish([id]);res.json(center);
   });
   router.get("/order-items/:id/remaining-plan",plannerOnly,async(req,res)=>{
-    const item=await prisma.orderItem.findFirst({where:{id:z.string().uuid().parse(req.params.id),order:{archivedAt:null}},include:{launchItems:{select:{quantity:true}},routes:{where:{active:true},include:routeInclude,orderBy:{version:'desc'}}}});
+    const item=await prisma.orderItem.findFirst({where:{id:z.string().uuid().parse(req.params.id),archivedAt:null,order:{archivedAt:null}},include:{launchItems:{select:{quantity:true}},routes:{where:{active:true},include:routeInclude,orderBy:{version:'desc'}}}});
     if(!item)throw new ProductionError(404,"Позиция не найдена");
     res.json({plan:item.remainingPlan,version:item.remainingPlanVersion,remaining:Math.max(0,item.quantity-item.launchItems.reduce((sum,l)=>sum+l.quantity,0)),routes:item.routes});
   });
@@ -175,7 +175,7 @@ export function productionRouter(prisma: PrismaClient) {
       if(!owner)throw new ProductionError(404,"Позиция не найдена");
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${owner.orderId} FOR UPDATE`;
       await tx.$queryRaw`SELECT id FROM "OrderItem" WHERE id = ${id} FOR UPDATE`;
-      const item=await tx.orderItem.findFirst({where:{id,order:{archivedAt:null}},include:{launchItems:{select:{quantity:true}}}});
+      const item=await tx.orderItem.findFirst({where:{id,archivedAt:null,order:{archivedAt:null}},include:{launchItems:{select:{quantity:true}}}});
       if(!item)throw new ProductionError(404,"Позиция не найдена");
       if(item.remainingPlanVersion!==input.version)throw new ProductionError(409,"План изменён. Откройте форму заново");
       if(input.plan){

@@ -69,10 +69,16 @@
 .items-head button { display: flex; align-items: center; gap: 5px; border: 0; background: transparent; color: #bd4f32; font-weight: 800; cursor: pointer; }
 .items-head svg { width: 16px; }
 .draft-items { padding: 8px 24px; }
-.draft-item { position: relative; display: grid; grid-template-columns: 2.4fr .7fr 1fr 1fr 30px; align-items: end; gap: 9px; padding: 12px 0; border-bottom: 1px solid #eaedeb; }
+.draft-item { position: relative; display: grid; grid-template-columns: 2.4fr .7fr 1fr 1fr auto 30px; align-items: end; gap: 9px; padding: 12px 0; border-bottom: 1px solid #eaedeb; }
 .draft-item > strong { height: 40px; display: flex; align-items: center; justify-content: flex-end; font-size: 13px; }
 .remove { height: 40px; }
 .remove svg { width: 17px; }
+.archive-item { height: 32px; margin-bottom: 4px; padding: 0 9px; border: 1px solid #d3d9d5; border-radius: 4px; background: #fff; color: #536058; font-size: 11px; font-weight: 700; cursor: pointer; }
+.archived-items { margin: 14px 24px; padding: 14px; border: 1px dashed #c8d0cb; border-radius: 6px; background: #fafbfa; }
+.archived-items h3 { margin: 0 0 8px; color: #617068; font-size: 13px; }
+.archived-items > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid #e6eae7; }
+.archived-items span { display: grid; gap: 3px; }
+.archived-items small { color: #718078; }
 .organization-badge { position: relative; width: max-content; margin-top: 2px; padding: 4px 8px 4px 18px; border-radius: 12px; font-size: 10px; font-style: normal; font-weight: 900; }
 .organization-badge::before { content: ""; position: absolute; width: 7px; height: 7px; margin: 2px 0 0 -11px; border-radius: 50%; }
 .organization-badge.org-ip_vetrov { color: #236ba8; background: #e8f4ff; }

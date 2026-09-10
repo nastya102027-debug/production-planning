@@ -127,11 +127,13 @@ model OrderItem {
   completedQuantity Int @default(0)
   status OrderStatus @default(DRAFT)
   comment String?
+  archivedAt DateTime?
   launchItems ProductionLaunchItem[]
   routes Route[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([orderId, status])
+  @@index([orderId, archivedAt])
 }
 
 model Procurement {

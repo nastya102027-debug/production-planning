@@ -169,6 +169,15 @@ try {
   check(archivedOrder.status === 200 && !(await request("/orders", cookie)).data.some(row => row.id === order.id) && (await request("/orders?archived=true", cookie)).data.some(row => row.id === order.id), "Archived orders appear only in archive list");
   check((await request("/launches", cookie, { ...body, number: "ARCHIVED-LAUNCH" })).status === 404, "Archived orders cannot be launched");
   check((await request(`/orders/${order.id}/archive`, cookie, { archived: false, updatedAt: archivedOrder.data.updatedAt }, "PATCH")).status === 200, "Planner can restore archived order");
+  const currentItem = (await request(`/orders/${order.id}`, cookie)).data.items[0];
+  const itemArchiveBody = { archived: true, updatedAt: currentItem.updatedAt };
+  check((await request(`/orders/${order.id}/items/${item.id}/archive`, workerCookie, itemArchiveBody, "PATCH")).status === 403, "Employee cannot archive order item");
+  const archivedItem = await request(`/orders/${order.id}/items/${item.id}/archive`, cookie, itemArchiveBody, "PATCH");
+  const activeOrderAfterItemArchive = await request(`/orders/${order.id}`, cookie);
+  check(archivedItem.status === 200 && activeOrderAfterItemArchive.data.items.length === 0 && (await request(`/order-items/${item.id}/routes`, cookie)).data.length === 0, "Archived item is hidden from active order and route editor");
+  check((await request("/launches", cookie, { ...body, number: "ARCHIVED-ITEM-LAUNCH" })).status === 400, "Archived item cannot be included in a new launch");
+  const restoredItem = await request(`/orders/${order.id}/items/${item.id}/archive`, cookie, { archived: false, updatedAt: archivedItem.data.updatedAt }, "PATCH");
+  check(restoredItem.status === 200 && (await request(`/orders/${order.id}`, cookie)).data.items[0].id === item.id, "Planner can restore archived order item");
 
   if (process.argv.includes("--browser")) {
     const uiOrder = await request("/orders", cookie, { productionOrderNumber: "TEST-UI", organization: "LATUNING", drawingApprovalDate: "2026-09-08", productionLeadDays: 10, items: [{ name: "Деталь для проверки интерфейса", quantity: 5, unitPrice: 100 }] });

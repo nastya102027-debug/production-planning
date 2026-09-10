@@ -149,7 +149,7 @@ app.get("/api/orders", auth, planner, async (req, res) => {
         { customer: { contains: query.search, mode: "insensitive" } }
       ] } : {})
     },
-    include: { items: true, procurement: true },
+    include: { items: { where: { archivedAt: null } }, procurement: true },
     orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
     take: 100
   });
@@ -167,7 +167,7 @@ app.get("/api/orders/export", auth, planner, async (req, res) => {
         { customer: { contains: query.search, mode: "insensitive" } }
       ] } : {})
     },
-    include: { items: true },
+    include: { items: { where: { archivedAt: null } }, },
     orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
     take: 5000
   });
@@ -198,7 +198,8 @@ app.post("/api/orders/import", auth, planner, async (req, res) => {
 });
 
 app.get("/api/orders/:id", auth, planner, async (req, res) => {
-  const order = await prisma.order.findFirst({ where: { id: String(req.params.id), archivedAt: null }, include: { items: true, procurement: true, launches: true } });
+  const query = z.object({ items: z.enum(["active", "all"]).optional() }).parse(req.query);
+  const order = await prisma.order.findFirst({ where: { id: String(req.params.id), archivedAt: null }, include: { items: query.items === "all" ? true : { where: { archivedAt: null } }, procurement: true, launches: true } });
   if (!order) return res.status(404).json({ message: "Заказ не найден" });
   res.json(presentOrder(order));
 });
@@ -242,7 +243,7 @@ app.put("/api/orders/:id", auth, planner, async (req, res) => {
   const id = z.string().uuid().parse(req.params.id);
   const order = await prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`;
-    const before = await tx.order.findFirst({ where: { id, archivedAt: null }, include: { items: { include: { launchItems: true, routes: true } }, launches: true } });
+    const before = await tx.order.findFirst({ where: { id, archivedAt: null }, include: { items: { where: { archivedAt: null }, include: { launchItems: true, routes: true } }, launches: true } });
     if (!before) throw new ProductionError(404, "Заказ не найден");
     if (before.updatedAt.toISOString() !== input.updatedAt) throw new ProductionError(409, "Заказ изменён. Закройте форму и обновите список перед редактированием");
     const ids = input.items.flatMap(item => item.id ? [item.id] : []);
@@ -261,7 +262,7 @@ app.put("/api/orders/:id", auth, planner, async (req, res) => {
     }
     const drawingApprovalDate = parseDateOnly(input.drawingApprovalDate);
     const dueDate = addWorkingDays(drawingApprovalDate, input.productionLeadDays);
-    const updated = await tx.order.update({ where: { id }, data: { productionOrderNumber: input.productionOrderNumber, customerOrderNumber: input.customerOrderNumber ?? null, organization: input.organization, priority: input.priority, drawingApprovalDate, productionLeadDays: input.productionLeadDays, dueDate, comment: input.comment ?? before.comment }, include: { items: true, procurement: true } });
+    const updated = await tx.order.update({ where: { id }, data: { productionOrderNumber: input.productionOrderNumber, customerOrderNumber: input.customerOrderNumber ?? null, organization: input.organization, priority: input.priority, drawingApprovalDate, productionLeadDays: input.productionLeadDays, dueDate, comment: input.comment ?? before.comment }, include: { items: { where: { archivedAt: null } }, procurement: true } });
     // Only stages that inherited the order deadline follow changes to that deadline.
     await tx.operation.updateMany({ where: { launchItem: { launch: { orderId: id, plannedFinish: null } }, status: { notIn: ["COMPLETED", "CANCELLED"] } }, data: { dueDate } });
     if (updated.items.some(item => item.completedQuantity > 0)) {
@@ -273,6 +274,22 @@ app.put("/api/orders/:id", auth, planner, async (req, res) => {
     return updated;
   });
   res.json(presentOrder(order));
+});
+
+app.patch("/api/orders/:orderId/items/:itemId/archive", auth, planner, async (req, res) => {
+  const orderId = z.string().uuid().parse(req.params.orderId);
+  const itemId = z.string().uuid().parse(req.params.itemId);
+  const input = z.object({ archived: z.boolean(), updatedAt: z.string().datetime() }).parse(req.body);
+  const item = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`;
+    const before = await tx.orderItem.findFirst({ where: { id: itemId, orderId, order: { archivedAt: null } } });
+    if (!before) throw new ProductionError(404, "Позиция заказа не найдена");
+    if (before.updatedAt.toISOString() !== input.updatedAt) throw new ProductionError(409, "Позиция уже изменена. Обновите заказ");
+    const updated = await tx.orderItem.update({ where: { id: itemId }, data: { archivedAt: input.archived ? new Date() : null } });
+    await tx.auditLog.create({ data: { actorId: req.session!.sub, action: input.archived ? "ORDER_ITEM_ARCHIVED" : "ORDER_ITEM_RESTORED", entityType: "OrderItem", entityId: itemId, before: { archivedAt: before.archivedAt }, after: { archivedAt: updated.archivedAt, orderId } } });
+    return updated;
+  });
+  res.json(item);
 });
 
 app.post("/api/archive/clear", auth, planner, async(req,res)=>{

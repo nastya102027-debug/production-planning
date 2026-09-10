@@ -18,11 +18,11 @@ import { IntegrationMapping } from "./integration-mapping";
 type User = { firstName:string; lastName:string; role:"PLANNER"|"EMPLOYEE"; workCenters:{workCenter:{id:string;name:string}}[] };
 type Summary = { orders:number; inProcurement:number; operations:number; stopped:number };
 type Organization = "IP_VETROV"|"LATUNING"|"ECONTRID";
-type OrderItem = { comment?:string; id:string; name:string; quantity:number; completedQuantity:number; unitPrice:number; total:number };
+type OrderItem = { archivedAt?:string; comment?:string; id:string; name:string; quantity:number; completedQuantity:number; unitPrice:number; total:number; updatedAt:string };
 type Order = { updatedAt:string; archivedAt?:string; id:string; productionOrderNumber:string; customerOrderNumber?:string; organization?:Organization; drawingApprovalDate?:string; productionLeadDays?:number; status:string; priority:string; dueDate?:string; items:OrderItem[]; total:number; completedTotal:number };
 type Procurement = { id:string; status:string; startedAt:string; expectedAt?:string; readyAt?:string; deadlineState:string; comment?:string; responsible?:{id:string;firstName:string;lastName:string}; order:Order };
 type UserOption = { id:string; firstName:string; lastName:string; role:string };
-type DraftItem = { id?:string; comment?:string; name:string; quantity:number|""; unitPrice:number };
+type DraftItem = { id?:string; updatedAt?:string; comment?:string; name:string; quantity:number|""; unitPrice:number };
 type Page = "overview"|"orders"|"procurement"|"launches"|"problems"|"centers"|"staff"|"analytics"|"integration";
 const pages:Page[]=["overview","orders","procurement","launches","problems","centers","staff","analytics","integration"];
 
@@ -81,10 +81,25 @@ function OrderForm({onClose,onCreated,existing}:{onClose:()=>void;onCreated:(ord
   const [productionLeadDays,setProductionLeadDays]=useState<number|"">(existing?.productionLeadDays??"");
   const [priority,setPriority]=useState(existing?.priority??"NORMAL");
   const [error,setError]=useState("");
-  const [items,setItems]=useState<DraftItem[]>(existing?.items.map(i=>({id:i.id,name:i.name,quantity:i.quantity,unitPrice:i.unitPrice,comment:i.comment}))??[{name:"",quantity:"",unitPrice:0}]);
+  const [items,setItems]=useState<DraftItem[]>(existing?.items.map(i=>({id:i.id,updatedAt:i.updatedAt,name:i.name,quantity:i.quantity,unitPrice:i.unitPrice,comment:i.comment}))??[{name:"",quantity:"",unitPrice:0}]);
+  const [archivedItems,setArchivedItems]=useState<OrderItem[]>([]);
   const total=items.reduce((sum,item)=>sum+(Number(item.quantity)||0)*(Number(item.unitPrice)||0),0);
   const dueDate=calculateDueDate(drawingApprovalDate,productionLeadDays);
   function patchItem(index:number, patch:Partial<DraftItem>) { setItems(current=>current.map((item,i)=>i===index?{...item,...patch}:item)); }
+  async function loadItems() {
+    if(!existing)return;
+    const order=await api<Order>(`/orders/${existing.id}?items=all`);
+    setItems(order.items.filter(item=>!item.archivedAt).map(item=>({id:item.id,updatedAt:item.updatedAt,name:item.name,quantity:item.quantity,unitPrice:item.unitPrice,comment:item.comment})));
+    setArchivedItems(order.items.filter(item=>item.archivedAt));
+  }
+  useEffect(()=>{void loadItems().catch(error=>setError(error instanceof Error?error.message:"Не удалось загрузить позиции"));},[existing?.id]);
+  async function setItemArchived(item:{id?:string;updatedAt?:string;name:string}, archived:boolean) {
+    if(!existing||!item.id||!item.updatedAt)return;
+    if(!window.confirm(archived?`Переместить «${item.name}» в архив? Маршруты и запуски сохранятся.`:`Восстановить «${item.name}» в заказ?`))return;
+    setError("");
+    try { await api(`/orders/${existing.id}/items/${item.id}/archive`,{method:"PATCH",body:JSON.stringify({archived,updatedAt:item.updatedAt})}); await loadItems(); }
+    catch(error) { setError(error instanceof Error?error.message:"Не удалось изменить архив позиции"); }
+  }
   async function submit(event:React.FormEvent) {
     event.preventDefault();
     setError("");
@@ -130,8 +145,10 @@ function OrderForm({onClose,onCreated,existing}:{onClose:()=>void;onCreated:(ord
         <label>Количество, шт.<input type="number" min="1" value={item.quantity} onChange={e=>patchItem(index,{quantity:e.target.value?Number(e.target.value):""})} required/></label>
         <label>Цена за единицу, ₽<input type="number" min="0" step="0.01" value={item.unitPrice} onChange={e=>patchItem(index,{unitPrice:Number(e.target.value)})} required/></label>
         <strong>{money(Number(item.quantity)*item.unitPrice)}</strong>
+        {existing&&item.id&&<button type="button" className="archive-item" title="В архив" onClick={()=>void setItemArchived(item,true)}>В архив</button>}
         {items.length>1&&<button type="button" className="remove" onClick={()=>{if(!item.id||window.confirm("Удалить позицию из заказа?"))setItems(items.filter((_,i)=>i!==index));}}><X/></button>}
       </div>)}</div>
+      {existing&&archivedItems.length>0&&<section className="archived-items"><h3>Архив позиций</h3>{archivedItems.map(item=><div key={item.id}><span><b>{item.name}</b><small>{item.quantity} шт. · {money(item.unitPrice*item.quantity)}</small></span><button type="button" className="secondary" onClick={()=>void setItemArchived(item,false)}>Восстановить</button></div>)}</section>}
       {error&&<div className="error">{error}</div>}
       <footer><div><span>Итого по заказу</span><strong>{money(total)}</strong></div><button type="button" className="secondary" onClick={onClose}>Отмена</button><button className="primary">{existing?"Сохранить изменения":"Создать заказ"}</button></footer>
     </form>
