@@ -11,4 +11,8 @@ describe("order CSV", () => {
   it("reports malformed rows without writing data", () => {
     expect(previewOrderCsv(`${header}\nP-1,,,,,Рама,0,-1,0`).errors.length).toBe(2);
   });
+  it("rejects conflicting order metadata", () => {
+    const csv = `${header}\nP-1,C-1,LATUNING,DRAFT,2026-09-10,Рама,1,10,10\nP-1,C-2,LATUNING,DRAFT,2026-09-10,Лист,1,20,20`;
+    expect(previewOrderCsv(csv).errors).toContain("Строка 3: реквизиты заказа отличаются от предыдущих строк");
+  });
 });

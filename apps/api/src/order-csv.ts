@@ -19,10 +19,16 @@ export function previewOrderCsv(text: string) {
   const rows = parseCsv(text.replace(/^\uFEFF/, ""));
   if (!rows.length || rows[0].join("\u0000") !== orderCsvHeaders.join("\u0000")) return { rows: 0, errors: ["Неизвестный формат CSV. Используйте файл, выгруженный из раздела заказов."] };
   const errors: string[] = [];
+  const orders = new Map<string, string>();
   for (const [index, row] of rows.slice(1).entries()) {
     const line = index + 2;
     if (row.length !== orderCsvHeaders.length) { errors.push(`Строка ${line}: ожидалось 9 столбцов`); continue; }
     if (!row[0].trim() || !row[5].trim()) errors.push(`Строка ${line}: не заполнен номер производства или позиция`);
+    if (row[2] && !["IP_VETROV", "LATUNING", "ECONTRID"].includes(row[2])) errors.push(`Строка ${line}: неизвестная организация`);
+    const signature = [row[1], row[2], row[4]].join("\u0000");
+    const previous = orders.get(row[0]);
+    if (previous && previous !== signature) errors.push(`Строка ${line}: реквизиты заказа отличаются от предыдущих строк`);
+    if (row[0]) orders.set(row[0], signature);
     const quantity = Number(row[6]), price = Number(row[7]);
     if (!Number.isInteger(quantity) || quantity <= 0) errors.push(`Строка ${line}: количество должно быть положительным целым`);
     if (!Number.isFinite(price) || price < 0) errors.push(`Строка ${line}: цена должна быть неотрицательным числом`);
