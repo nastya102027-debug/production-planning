@@ -209,10 +209,10 @@ export function productionRouter(prisma: PrismaClient) {
       prisma.operation.findMany({
         where: query.workCenterId ? { workCenterId: query.workCenterId } : {},
         select: {
-          id: true, title: true,
+            id: true, title: true, normHours: true,
           workCenter: { select: { id: true, name: true } },
           launchItem: { select: { orderItem: { select: { order: { select: { productionOrderNumber: true } } } } } },
-          timeEntries: { where: { startedAt: { lt: to }, OR: [{ finishedAt: null }, { finishedAt: { gt: from } }] }, select: { startedAt: true, finishedAt: true } },
+          timeEntries: { where: { startedAt: { lt: to }, OR: [{ finishedAt: null }, { finishedAt: { gt: from } }] }, select: { startedAt: true, finishedAt: true, user: { select: { id: true, firstName: true, lastName: true } } } },
           statusHistory: { where: { changedAt: { lt: to } }, select: { id: true, fromStatus: true, toStatus: true, changedAt: true, reason: true } }
         }
       }),
