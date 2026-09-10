@@ -52,6 +52,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .center-card { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 10px; text-align: left; background: #fff; padding: 18px; border: 1px solid #dce3dd; border-radius: 5px; color: #3a4f3e; }
 .center-card:hover { border-color: #8eaa95; }
 .center-card.has-load { border-top: 3px solid #69816e; }
+.center-card--laser { border-top: 3px solid #d5653d; background: #fff7f2; }
+.center-card--bending { border-top: 3px solid #527cc5; background: #f3f7ff; }
+.center-card--powder { border-top: 3px solid #9662ad; background: #fbf5ff; }
+.center-card--nitride { border-top: 3px solid #24877d; background: #effbf8; }
 .center-card svg { width: 20px; }
 .center-card b { font-size: 13px; }
 .center-card strong { font-size: 23px; }

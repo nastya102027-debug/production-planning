@@ -42,6 +42,7 @@ try {
   const login = await request("/auth/login", null, { login: "test-planner", password }), workerLogin = await request("/auth/login", null, { login: "test-employee", password });
   check(login.status === 200 && workerLogin.status === 200, "Both roles authenticate");
   const cookie = login.cookie, workerCookie = workerLogin.cookie;
+  check((await request("/work-centers", cookie)).data.some(center => center.name === "Нитрид"), "Nitride work center is available for planning");
   const staffPassword = randomBytes(18).toString("hex");
   const staffBody = { login: "managed-worker", firstName: "Новый", lastName: "Сотрудник", active: true, password: staffPassword, workCenterIds: [centerB.id] };
   check((await request("/staff", workerCookie)).status === 403 && (await request("/staff", workerCookie, staffBody)).status === 403, "Employee cannot list or create accounts");
