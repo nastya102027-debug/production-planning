@@ -21,6 +21,7 @@ type Procurement = { id:string; status:string; startedAt:string; expectedAt?:str
 type UserOption = { id:string; firstName:string; lastName:string; role:string };
 type DraftItem = { id?:string; comment?:string; name:string; quantity:number|""; unitPrice:number };
 type Page = "overview"|"orders"|"procurement"|"launches"|"problems"|"centers"|"staff"|"analytics";
+const pages:Page[]=["overview","orders","procurement","launches","problems","centers","staff","analytics"];
 
 async function api<T>(path:string, init?:RequestInit):Promise<T> {
   const response = await fetch(`/api${path}`, { ...init, credentials:"include", headers:{"Content-Type":"application/json",...init?.headers} });
@@ -181,12 +182,17 @@ function GlobalSearch({onSelect}:{onSelect:(item:SearchResult)=>void}){
 }
 
 function Shell({user,onLogout}:{user:User;onLogout:()=>void}) {
-  const employee=user.role==="EMPLOYEE"; const [page,setPage]=useState<Page>("overview"); const [center,setCenter]=useState(""); const [focus,setFocus]=useState("");
+  const employee=user.role==="EMPLOYEE";
+  const locationState=()=>{const params=new URLSearchParams(window.location.hash.slice(1));const requested=params.get("page");const page=pages.includes(requested as Page)&&(!employee||requested==="overview")?requested as Page:"overview";return {page,center:page==="centers"?params.get("center")||"":"",focus:page==="centers"?params.get("task")||"":""};};
+  const initialLocation=locationState();
+  const [page,setPage]=useState<Page>(initialLocation.page); const [center,setCenter]=useState(initialLocation.center); const [focus,setFocus]=useState(initialLocation.focus);
+  const navigate=(nextPage:Page,nextCenter="",nextFocus="")=>{const safePage=employee?"overview":nextPage;setPage(safePage);setCenter(safePage==="centers"?nextCenter:"");setFocus(safePage==="centers"?nextFocus:"");const params=new URLSearchParams({page:safePage});if(safePage==="centers"&&nextCenter)params.set("center",nextCenter);if(safePage==="centers"&&nextFocus)params.set("task",nextFocus);window.history.pushState(null,"",`#${params.toString()}`);};
+  useEffect(()=>{const restore=()=>{const saved=locationState();setPage(saved.page);setCenter(saved.center);setFocus(saved.focus);};window.addEventListener("popstate",restore);window.addEventListener("hashchange",restore);return()=>{window.removeEventListener("popstate",restore);window.removeEventListener("hashchange",restore);};},[]);
   const titles:Record<Page,string>={overview:employee?`Мой участок — ${user.workCenters[0]?.workCenter.name??"не назначен"}`:"Производство сегодня",orders:"Заказы",procurement:"Закупка",launches:"Производственные запуски",problems:"Уведомления Планеру",staff:"Сотрудники",analytics:"Аналитика",centers:"Производственные участки"};
-  const openCenter=(id:string)=>{setCenter(id);setFocus("");setPage("centers");};
-  const openTask=(id:string)=>{setFocus(id);setCenter("");setPage(id?"centers":"problems");};
-  const openSearch=(item:SearchResult)=>{if(item.type==="operation"){setCenter(item.centerId||"");setFocus(item.id);setPage("centers");}else if(item.type==="employee")setPage("staff");else if(item.type==="launch")setPage("launches");else setPage("orders");};
-  const nav=(target:Page,Icon:typeof Factory,label:string)=><button className={page===target?"active":""} onClick={()=>{setPage(target);setCenter("");setFocus("");}}><Icon/> {label}</button>;
+  const openCenter=(id:string)=>navigate("centers",id);
+  const openTask=(id:string)=>navigate(id?"centers":"problems","",id);
+  const openSearch=(item:SearchResult)=>{if(item.type==="operation")navigate("centers",item.centerId||"",item.id);else if(item.type==="employee")navigate("staff");else if(item.type==="launch")navigate("launches");else navigate("orders");};
+  const nav=(target:Page,Icon:typeof Factory,label:string)=><button className={page===target?"active":""} onClick={()=>navigate(target)}><Icon/> {label}</button>;
   return <div className="shell"><aside><div className="logo"><span>К</span><b>КОНТУР</b></div><nav>{nav("overview",Factory,employee?"Мой участок":"Обзор")}{!employee&&<>{nav("orders",ClipboardList,"Заказы")}{nav("procurement",PackageCheck,"Закупка")}{nav("launches",Boxes,"Запуски")}{nav("centers",Factory,"Участки")}{nav("problems",AlertTriangle,"Уведомления")}{nav("staff",Factory,"Сотрудники")}{nav("analytics",Clock,"Аналитика")}</>}</nav><button className="logout" onClick={onLogout}><LogOut/> Выйти</button></aside><main><header><div><p>{employee?"РАБОЧЕЕ МЕСТО":"ЦЕНТР УПРАВЛЕНИЯ"}</p><h1>{titles[page]}</h1></div><div className="header-tools">{!employee&&<GlobalSearch onSelect={openSearch}/>} {!employee&&<Notifications compact onOpen={openTask}/>}<span className="avatar">{user.firstName[0]}{user.lastName[0]}</span><div><b>{user.firstName} {user.lastName}</b><small>{employee?"Сотрудник участка":"Планер"}</small></div></div></header>{employee?<OperationsScreen/>:page==="analytics"?<Analytics onOpenTask={openTask}/>:page==="staff"?<StaffScreen/>:page==="orders"?<OrdersScreen/>:page==="procurement"?<ProcurementScreen/>:page==="overview"?<Dashboard onOpenTask={openTask}/>:page==="launches"?<PlanningScreen onOpenCenter={openCenter}/>:page==="centers"?<OperationsScreen key={center} planner initialCenter={center} focusId={focus}/>:page==="problems"?<Notifications onOpen={openTask}/>:<div className="content"><EmptyPanel eyebrow="РАЗДЕЛ" title={titles[page]} icon={Factory} text="Раздел готовится"/></div>}</main></div>;
 }
 
