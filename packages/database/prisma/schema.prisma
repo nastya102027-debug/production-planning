@@ -313,3 +313,14 @@ model AuditLog {
   @@index([entityType, entityId, createdAt])
   @@index([actorId, createdAt])
 }
+
+model IntegrationFieldMapping {
+  id String @id @default(uuid())
+  source String @default("1C")
+  targetField String
+  sourceField String
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([source, targetField])
+}

@@ -72,6 +72,9 @@ app.get("/api/work-centers",auth,async(req,res)=>{
   if(req.session!.role==="PLANNER")return res.json(await prisma.workCenter.findMany({where:{active:true},orderBy:{name:"asc"}}));
   const links=await prisma.userWorkCenter.findMany({where:{userId:req.session!.sub},select:{workCenter:true}});res.json(links.map(x=>x.workCenter));
 });
+const mappingInput=z.object({targetField:z.enum(["productionOrderNumber","customerOrderNumber","organization","dueDate","itemName","quantity","unitPrice"]),sourceField:z.string().trim().min(1).max(200),active:z.boolean()});
+app.get("/api/integrations/1c/mapping",auth,planner,async(_req,res)=>res.json(await prisma.integrationFieldMapping.findMany({where:{source:"1C"},orderBy:{targetField:"asc"}})));
+app.put("/api/integrations/1c/mapping",auth,planner,async(req,res)=>{const rows=z.array(mappingInput).max(7).parse(req.body);const unique=new Set(rows.map(row=>row.targetField));if(unique.size!==rows.length)return res.status(400).json({message:"Поле заказа нельзя сопоставить дважды"});await prisma.$transaction(async tx=>{await tx.integrationFieldMapping.deleteMany({where:{source:"1C"}});if(rows.length)await tx.integrationFieldMapping.createMany({data:rows.map(row=>({...row,source:"1C"}))});await tx.auditLog.create({data:{actorId:req.session!.sub,action:"INTEGRATION_MAPPING_UPDATED",entityType:"Integration",after:{source:"1C",fields:rows.map(row=>row.targetField)}}});});res.json(await prisma.integrationFieldMapping.findMany({where:{source:"1C"},orderBy:{targetField:"asc"}}));});
 app.use("/api", auth, productionRouter(prisma));
 app.get("/api/planner/dashboard",auth,planner,async(_req,res)=>{
   const [orders,stopped,problems]=await prisma.$transaction([
