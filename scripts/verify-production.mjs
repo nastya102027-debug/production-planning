@@ -70,6 +70,11 @@ try {
   check(exportedResponse.status === 200 && exportedCsv.includes("TEST-100") && exportedCsv.includes("Тестовая деталь"), "Planner can export orders as CSV");
   const importPreview = await request("/orders/import/preview", cookie, { csv: exportedCsv }, "POST");
   check(importPreview.status === 200 && importPreview.data.rows === 1 && importPreview.data.errors.length === 0, "Planner can preview exported CSV without writing data");
+  const importCsv = exportedCsv.replaceAll("TEST-100", "TEST-CSV");
+  check((await request("/orders/import", workerCookie, { csv: importCsv }, "POST")).status === 403, "Employee cannot import orders");
+  const importedOrders = await request("/orders/import", cookie, { csv: importCsv }, "POST");
+  check(importedOrders.status === 201 && importedOrders.data.orders === 1 && (await request("/orders?search=TEST-CSV", cookie)).data.length === 1, "Planner imports validated new CSV orders");
+  check((await request("/orders/import", cookie, { csv: importCsv }, "POST")).status === 409, "Import never overwrites an existing order");
   const routeBody = { name: "Параллельный маршрут", steps: [{ title: "Первый этап", workCenterId: centerA.id, predecessorIndexes: [] }, { title: "Ветка А", workCenterId: centerA.id, predecessorIndexes: [0] }, { title: "Ветка Б", workCenterId: centerB.id, predecessorIndexes: [0] }, { title: "Завершающий этап", workCenterId: centerA.id, predecessorIndexes: [1, 2] }] };
   const route = await request(`/order-items/${item.id}/routes`, cookie, routeBody);
   check(route.status === 201, "Parallel route with repeated work center is saved");
