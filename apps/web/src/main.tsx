@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AlertTriangle, Boxes, ClipboardList, Factory, LogOut, PackageCheck, Plus, Search, X, Clock } from "lucide-react";
 import "./styles.css";
@@ -136,7 +136,7 @@ function OrderForm({onClose,onCreated,existing}:{onClose:()=>void;onCreated:(ord
 
 function OrdersScreen() {
   const [forecastOrder,setForecastOrder]=useState<Order|null>(null);
-  const [clearing,setClearing]=useState(false),[notice,setNotice]=useState("");
+  const [clearing,setClearing]=useState(false),[importBusy,setImportBusy]=useState(false),[notice,setNotice]=useState(""); const importInput=useRef<HTMLInputElement>(null);
   const [orders,setOrders]=useState<Order[]>([]); const [loading,setLoading]=useState(true); const [search,setSearch]=useState(""); const [showForm,setShowForm]=useState(false); const [editing,setEditing]=useState<Order>(); const [archived,setArchived]=useState(false); const [error,setError]=useState("");
   const load=()=>{setLoading(true);return api<Order[]>(`/orders?archived=${archived}&search=${encodeURIComponent(search)}`).then(setOrders).catch(e=>setError(e.message)).finally(()=>setLoading(false));};
   async function archive(order:Order){if(!window.confirm(archived?"Вернуть заказ в работу?":"Переместить заказ в архив? Существующие производственные задачи продолжат выполняться."))return;try{await api(`/orders/${order.id}/archive`,{method:"PATCH",body:JSON.stringify({archived:!archived,updatedAt:order.updatedAt})});await load();}catch(e){setError(e instanceof Error?e.message:"Ошибка сохранения");}}
@@ -144,9 +144,10 @@ function OrdersScreen() {
     if(clearing||!window.confirm(order?`Очистить запись «Производство № ${order.productionOrderNumber}»? Она исчезнет из архива, восстановление из списка станет недоступно. Производственные задачи и история сохранятся.`:"Очистить весь архив, включая записи вне текущего поиска? Восстановление из списка станет недоступно. Производственные задачи и история сохранятся."))return;
     setClearing(true);setError("");setNotice("");try{const result=await api<{count:number}>("/archive/clear",{method:"POST",body:JSON.stringify(order?{id:order.id,updatedAt:order.updatedAt}:{all:true})});setNotice(`Очищено записей: ${result.count}`);await load();}catch(e){setError((e as Error).message);}finally{setClearing(false);}
   }
+  async function previewImport(file:File){setImportBusy(true);setError("");setNotice("");try{const csv=await file.text();const result=await api<{rows:number;errors:string[]}>("/orders/import/preview",{method:"POST",body:JSON.stringify({csv})});setNotice(result.errors.length?`Проверено строк: ${result.rows}. Ошибки: ${result.errors.join("; ")}`:`Проверено строк: ${result.rows}. Данные корректны, запись ещё не выполнялась.`);}catch(e){setError(e instanceof Error?e.message:"Не удалось проверить CSV");}finally{setImportBusy(false);if(importInput.current)importInput.current.value="";}}
   useEffect(()=>{void load();},[archived]);
   return <div className="content orders-page">
-    <div className="page-actions"><div><p className="kicker">ЗАКАЗЫ</p><h2>Портфель заказов</h2></div><div><label className="order-search"><Search/><input placeholder="Номер производства или покупателя" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load()}/></label><a className="secondary" href={`/api/orders/export?archived=${archived}&search=${encodeURIComponent(search)}`} download="production-orders.csv">Экспорт CSV</a><button className="primary" onClick={()=>{setEditing(undefined);setShowForm(true);}}><Plus/> Новый заказ</button></div></div>
+    <div className="page-actions"><div><p className="kicker">ЗАКАЗЫ</p><h2>Портфель заказов</h2></div><div><label className="order-search"><Search/><input placeholder="Номер производства или покупателя" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load()}/></label><a className="secondary" href={`/api/orders/export?archived=${archived}&search=${encodeURIComponent(search)}`} download="production-orders.csv">Экспорт CSV</a><button className="secondary" disabled={importBusy} onClick={()=>importInput.current?.click()}>Проверить CSV</button><input ref={importInput} hidden type="file" accept=".csv,text/csv" onChange={e=>{const file=e.target.files?.[0];if(file)void previewImport(file);}}/><button className="primary" onClick={()=>{setEditing(undefined);setShowForm(true);}}><Plus/> Новый заказ</button></div></div>
     <div className="page-actions"><button className="secondary" disabled={clearing} onClick={()=>{setArchived(!archived);setNotice("");}}>{archived?"Показать активные заказы":"Открыть архив"}</button><button className="secondary" onClick={()=>void load()}>Обновить список</button>{archived&&<button className="secondary" disabled={clearing||loading} onClick={()=>void clearArchive()}>{clearing?"Очищаю…":"Очистить всё"}</button>}</div>{notice&&<p role="status">{notice}</p>}{error&&<p className="error" role="alert">{error}</p>}
     <div className="order-table">
       <div className="order-row heading"><span>Заказ / организация</span><span>Срок</span><span>Статус</span><span>Позиции</span><span>Готово</span><span>Стоимость</span></div>

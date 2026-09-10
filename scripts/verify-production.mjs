@@ -65,6 +65,8 @@ try {
   const exportedResponse = await fetch(`${base}/api/orders/export?search=TEST-100`, { headers: { Cookie: cookie } });
   const exportedCsv = await exportedResponse.text();
   check(exportedResponse.status === 200 && exportedCsv.includes("TEST-100") && exportedCsv.includes("Тестовая деталь"), "Planner can export orders as CSV");
+  const importPreview = await request("/orders/import/preview", cookie, { csv: exportedCsv }, "POST");
+  check(importPreview.status === 200 && importPreview.data.rows === 1 && importPreview.data.errors.length === 0, "Planner can preview exported CSV without writing data");
   const routeBody = { name: "Параллельный маршрут", steps: [{ title: "Первый этап", workCenterId: centerA.id, predecessorIndexes: [] }, { title: "Ветка А", workCenterId: centerA.id, predecessorIndexes: [0] }, { title: "Ветка Б", workCenterId: centerB.id, predecessorIndexes: [0] }, { title: "Завершающий этап", workCenterId: centerA.id, predecessorIndexes: [1, 2] }] };
   const route = await request(`/order-items/${item.id}/routes`, cookie, routeBody);
   check(route.status === 201, "Parallel route with repeated work center is saved");

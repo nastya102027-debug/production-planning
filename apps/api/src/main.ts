@@ -14,6 +14,7 @@ import { productionRouter } from "./production.js";
 import { ProductionError } from "./production-rules.js";
 import { staffRouter } from "./staff.js";
 import { dashboardTotals } from "./dashboard.js";
+import { previewOrderCsv } from "./order-csv.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -160,7 +161,12 @@ app.get("/api/orders/export", auth, planner, async (req, res) => {
     (Number(item.unitPrice) * item.quantity).toFixed(2)
   ] as string[]);
   res.setHeader("Content-Disposition", `attachment; filename="production-orders.csv"`);
-  res.type("text/csv").send("\\uFEFF" + rows.map(row => row.map(escape).join(",")).join("\\r\\n"));
+  res.type("text/csv").send("\uFEFF" + rows.map(row => row.map(escape).join(",")).join("\r\n"));
+});
+
+app.post("/api/orders/import/preview", auth, planner, async (req, res) => {
+  const csv = z.object({ csv: z.string().max(5_000_000) }).parse(req.body).csv;
+  res.json(previewOrderCsv(csv));
 });
 
 app.get("/api/orders/:id", auth, planner, async (req, res) => {
