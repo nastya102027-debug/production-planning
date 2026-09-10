@@ -27,6 +27,7 @@ export function previewOrderCsv(text: string) {
     if (row.length !== orderCsvHeaders.length) { errors.push(`Строка ${line}: ожидалось 9 столбцов`); continue; }
     if (!row[0].trim() || !row[5].trim()) errors.push(`Строка ${line}: не заполнен номер производства или позиция`);
     if (row[2] && !["IP_VETROV", "LATUNING", "ECONTRID"].includes(row[2])) errors.push(`Строка ${line}: неизвестная организация`);
+    if (row[3] && !["DRAFT", "PROCUREMENT", "READY_FOR_LAUNCH", "IN_PRODUCTION", "PARTIALLY_READY", "COMPLETED"].includes(row[3])) errors.push(`Строка ${line}: неизвестный статус`);
     const signature = [row[1], row[2], row[4]].join("\u0000");
     const previous = orders.get(row[0]);
     if (previous && previous !== signature) errors.push(`Строка ${line}: реквизиты заказа отличаются от предыдущих строк`);
