@@ -137,6 +137,32 @@ app.get("/api/orders", auth, planner, async (req, res) => {
   res.json(orders.map(presentOrder));
 });
 
+app.get("/api/orders/export", auth, planner, async (req, res) => {
+  const query = z.object({ search: z.string().trim().max(100).optional(), archived: z.enum(["true", "false"]).optional() }).parse(req.query);
+  const orders = await prisma.order.findMany({
+    where: {
+      archivedAt: query.archived === "true" ? { not: null } : null, archiveClearedAt: null,
+      ...(query.search ? { OR: [
+        { productionOrderNumber: { contains: query.search, mode: "insensitive" } },
+        { customerOrderNumber: { contains: query.search, mode: "insensitive" } },
+        { customer: { contains: query.search, mode: "insensitive" } }
+      ] } : {})
+    },
+    include: { items: true },
+    orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+    take: 5000
+  });
+  const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+  const rows = [["Производство №", "Заказ клиента №", "Организация", "Статус", "Срок", "Позиция", "Количество", "Цена за единицу", "Сумма"]];
+  for (const order of orders) for (const item of order.items) rows.push([
+    order.productionOrderNumber, order.customerOrderNumber, order.organization, order.status,
+    order.dueDate?.toISOString().slice(0, 10), item.name, item.quantity, Number(item.unitPrice).toFixed(2),
+    (Number(item.unitPrice) * item.quantity).toFixed(2)
+  ] as string[]);
+  res.setHeader("Content-Disposition", `attachment; filename="production-orders.csv"`);
+  res.type("text/csv").send("\\uFEFF" + rows.map(row => row.map(escape).join(",")).join("\\r\\n"));
+});
+
 app.get("/api/orders/:id", auth, planner, async (req, res) => {
   const order = await prisma.order.findFirst({ where: { id: String(req.params.id), archivedAt: null }, include: { items: true, procurement: true, launches: true } });
   if (!order) return res.status(404).json({ message: "Заказ не найден" });

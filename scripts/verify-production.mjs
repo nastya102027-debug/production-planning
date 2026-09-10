@@ -62,6 +62,9 @@ try {
   check(!staffAudit.includes(staffPassword) && !staffAudit.includes(newStaffPassword) && !staffAudit.includes("passwordHash"), "Account audit contains no secrets or password hashes");
   const createdOrder = await request("/orders", cookie, { productionOrderNumber: "TEST-100", organization: "LATUNING", drawingApprovalDate: "2026-09-08", productionLeadDays: 10, items: [{ name: "Тестовая деталь", quantity: 10, unitPrice: 100 }] });
   assert.equal(createdOrder.status, 201); const order = createdOrder.data, item = order.items[0];
+  const exportedResponse = await fetch(`${base}/api/orders/export?search=TEST-100`, { headers: { Cookie: cookie } });
+  const exportedCsv = await exportedResponse.text();
+  check(exportedResponse.status === 200 && exportedCsv.includes("TEST-100") && exportedCsv.includes("Тестовая деталь"), "Planner can export orders as CSV");
   const routeBody = { name: "Параллельный маршрут", steps: [{ title: "Первый этап", workCenterId: centerA.id, predecessorIndexes: [] }, { title: "Ветка А", workCenterId: centerA.id, predecessorIndexes: [0] }, { title: "Ветка Б", workCenterId: centerB.id, predecessorIndexes: [0] }, { title: "Завершающий этап", workCenterId: centerA.id, predecessorIndexes: [1, 2] }] };
   const route = await request(`/order-items/${item.id}/routes`, cookie, routeBody);
   check(route.status === 201, "Parallel route with repeated work center is saved");
