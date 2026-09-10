@@ -129,11 +129,14 @@ export function productionRouter(prisma: PrismaClient) {
       history: operation.statusHistory.map(event => ({ id: event.id, status: event.toStatus, reason: event.reason, at: event.changedAt, actor: `${event.changedBy.lastName} ${event.changedBy.firstName}` })) };
   }
   router.get("/operations", async (req, res) => {
-    const query = z.object({ workCenterId: z.string().uuid().optional(), assigneeId: z.string().uuid().optional(), priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]).optional(), status: z.enum(["QUEUED", "IN_PROGRESS", "PAUSED", "COMPLETED"]).optional(), search: z.string().trim().max(100).default(""), page: z.coerce.number().int().min(1).default(1) }).parse(req.query);
+    const query = z.object({ workCenterId: z.string().uuid().optional(), assigneeId: z.string().uuid().optional(), priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]).optional(), deadline: z.enum(["TODAY", "OVERDUE"]).optional(), status: z.enum(["QUEUED", "IN_PROGRESS", "PAUSED", "COMPLETED"]).optional(), search: z.string().trim().max(100).default(""), page: z.coerce.number().int().min(1).default(1) }).parse(req.query);
+    const dayStart=new Date();dayStart.setUTCHours(0,0,0,0);const dayEnd=new Date(dayStart);dayEnd.setUTCDate(dayEnd.getUTCDate()+1);
+    const deadlineWhere:Prisma.OperationWhereInput=query.deadline==="TODAY"?{OR:[{plannedFinish:{gte:dayStart,lt:dayEnd}},{plannedFinish:null,dueDate:{gte:dayStart,lt:dayEnd}}]}:query.deadline==="OVERDUE"?{OR:[{plannedFinish:{lt:dayStart}},{plannedFinish:null,dueDate:{lt:dayStart}}]}:{};
+    const searchWhere:Prisma.OperationWhereInput[]=query.search?[{OR:[{launchItem:{orderItem:{name:{contains:query.search,mode:"insensitive"}}}},{launchItem:{orderItem:{order:{productionOrderNumber:{contains:query.search,mode:"insensitive"}}}}},{launchItem:{launch:{number:{contains:query.search,mode:"insensitive"}}}}]}]:[];
     const where: Prisma.OperationWhereInput = {
       ...(req.session!.role === "PLANNER" ? {} : { workCenter: { users: { some: { userId: req.session!.sub } } } }),
       ...(query.workCenterId ? { workCenterId: query.workCenterId } : {}), ...(query.assigneeId ? { assigneeId: query.assigneeId } : {}), ...(query.priority ? { priority: query.priority } : {}), ...(query.status ? { status: query.status } : { status: { not: "CANCELLED" } }),
-      ...(query.search ? { OR: [{ launchItem: { orderItem: { name: { contains: query.search, mode: "insensitive" } } } }, { launchItem: { orderItem: { order: { productionOrderNumber: { contains: query.search, mode: "insensitive" } } } } }, { launchItem: { launch: { number: { contains: query.search, mode: "insensitive" } } } }] } : {})
+      AND:[deadlineWhere,...searchWhere]
     };
     const [items, total, groups] = await prisma.$transaction([prisma.operation.findMany({ where, include: operationInclude, orderBy: [{ queueOrder: "asc" }, { priority: "desc" }, { dueDate: "asc" }, { id: "asc" }], skip: (query.page - 1) * 40, take: 40 }), prisma.operation.count({ where }), prisma.operation.groupBy({ by: ["status"], where, orderBy: { status: "asc" }, _count: true })]);
     res.json({ items: items.map(presentOperation), total, counts: Object.fromEntries(groups.map(group => [group.status, group._count])) });
