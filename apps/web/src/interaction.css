@@ -1,0 +1,30 @@
+/* Единая обратная связь для интерактивных элементов. */
+:root { --interactive-border: #b7c9bc; --interactive-surface: #f4f8f4; --interactive-shadow: 0 7px 18px #263b3020; --interactive-focus: #bd4f32; }
+button, a, input, select, textarea, .center-card, .procurement-card, .order-row, .metric, .panel, .launch-items article, .available-centers button, .route-preview button, .graph-stage { transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, color .18s ease, transform .18s ease, outline-color .18s ease; }
+button:not(:disabled), a[href], select, input[type="checkbox"], input[type="radio"], summary, [role="button"] { cursor: pointer; }
+button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--interactive-focus); outline-offset: 3px; }
+button:not(:disabled):hover { border-color: var(--interactive-border); background-color: var(--interactive-surface); box-shadow: 0 3px 10px #263b3014; }
+button:not(:disabled):active { transform: translateY(1px); box-shadow: none; }
+button.primary:not(:disabled):hover, .login button:not(:disabled):hover { background-color: #b94d33; border-color: #b94d33; box-shadow: 0 6px 16px #a8442d30; }
+button.secondary:not(:disabled):hover { background-color: #edf4ee; border-color: #aebfb1; color: #294b35; }
+select:hover, input:not([type="checkbox"]):not([type="radio"]):hover, textarea:hover { border-color: #9fb2a3; background-color: #fcfefc; }
+select:focus, input:not([type="checkbox"]):not([type="radio"]):focus, textarea:focus { border-color: #b6654e; box-shadow: 0 0 0 3px #bd4f3218; outline: none; }
+a[href]:hover { color: #a7422c; text-decoration-color: currentColor; }
+.shell nav button, .logout { transition: color .18s ease, background-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.shell nav button:hover, .logout:hover { color: #fff; background: #293a32; box-shadow: inset 3px 0 #d45b39; }
+.shell nav button.active { color: #fff; background: #29342e; box-shadow: inset 3px 0 #d45b39; }
+.center-card:hover, .metric:hover, .procurement-card:hover, .launch-items article:hover, .order-row:not(.heading):hover, .launch-history details:hover { border-color: var(--interactive-border); background-color: #fbfdfb; box-shadow: var(--interactive-shadow); transform: translateY(-1px); }
+.center-card:hover { cursor: pointer; }
+.center-card:active { transform: translateY(0); }
+.route-preview button:hover, .available-centers button:hover, .planning-orders>div>button:not(.secondary):hover, .dispatcher-orders>button:hover { background: #edf5ee; border-color: #aebfb1; box-shadow: inset 3px 0 #bd4f32; }
+.order-form .organization-option:focus-within, .order-form .organization-option:hover { border-color: #aebfb1; box-shadow: var(--interactive-shadow); }
+.organization-option.selected, .dispatcher-metrics button.selected, .planning-orders>div>button.selected { box-shadow: inset 3px 0 #bd4f32, 0 2px 9px #263b3010; }
+.dispatcher-metrics button:not(:disabled):hover { border-color: #9bb7a2; background: #f5faf6; box-shadow: var(--interactive-shadow); transform: translateY(-1px); }
+.dispatcher-metrics button.selected:hover { border-color: #426f51; background: #f0f7f1; }
+.pagination button:not(:disabled):hover, .route-button:not(:disabled):hover { transform: translateY(-1px); }
+.graph-builder .react-flow__node:hover .graph-stage { border-color: #9e3631; background: #fff9f7; box-shadow: 0 8px 20px #8f302b24; transform: translateY(-2px); }
+.graph-builder .react-flow__node.selected .graph-stage { border-color: #a73a34; background: #fff7f5; box-shadow: 0 0 0 3px #eab9b2, 0 8px 20px #8f302b1c; }
+.graph-builder .react-flow__edge:hover path { stroke: #8f302b; stroke-width: 3; filter: drop-shadow(0 1px 2px #8f302b45); }
+.graph-builder .react-flow__edge:hover .react-flow__edge-text { fill: #8f302b; }
+.graph-builder .react-flow__edge.selected path { filter: drop-shadow(0 1px 2px #67221f50); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; scroll-behavior: auto !important; } }
