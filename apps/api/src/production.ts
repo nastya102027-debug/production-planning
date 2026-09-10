@@ -1,3 +1,5 @@
+import {productionAnalytics} from "./analytics.js";
+import {isDateOnly,parseDateOnly} from "./working-days.js";
 import {remainingPlanInput} from "./remaining-plan.js";
 import {calculateOrderForecast,forecastOrderInclude,forecastOperationsInclude} from "./order-forecast-service.js";
 import {forecastAttention} from "./forecast-attention.js";
@@ -198,6 +200,26 @@ export function productionRouter(prisma: PrismaClient) {
     ],{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
     if(!order)throw new ProductionError(404,"Заказ не найден");
     res.json(calculateOrderForecast(order,rows,now));
+  });
+  router.get("/planner/analytics",plannerOnly,async(req,res)=>{
+    const query=z.object({from:z.string().refine(isDateOnly),to:z.string().refine(isDateOnly),workCenterId:z.string().uuid().optional(),page:z.coerce.number().int().min(1).max(100000).default(1)}).parse(req.query);
+    const from=parseDateOnly(query.from),to=new Date(parseDateOnly(query.to).getTime()+86400000),now=new Date();
+    if(to<=from||to.getTime()-from.getTime()>366*86400000)throw new ProductionError(400,"Выберите период от 1 до 366 дней");
+    const [operations,centers]=await prisma.$transaction([
+      prisma.operation.findMany({
+        where: query.workCenterId ? { workCenterId: query.workCenterId } : {},
+        select: {
+          id: true, title: true,
+          workCenter: { select: { id: true, name: true } },
+          launchItem: { select: { orderItem: { select: { order: { select: { productionOrderNumber: true } } } } } },
+          timeEntries: { where: { startedAt: { lt: to }, OR: [{ finishedAt: null }, { finishedAt: { gt: from } }] }, select: { startedAt: true, finishedAt: true } },
+          statusHistory: { where: { changedAt: { lt: to } }, select: { id: true, fromStatus: true, toStatus: true, changedAt: true, reason: true } }
+        }
+      }),
+      prisma.workCenter.findMany({select:{id:true,name:true},orderBy:{name:'asc'}})
+    ],{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
+    const report=productionAnalytics(operations.map(op=>({...op,orderNumber:op.launchItem.orderItem.order.productionOrderNumber})),from,to,now);
+    res.json({...report,stops:report.stops.slice((query.page-1)*30,query.page*30),stopTotal:report.stops.length,page:query.page,availableCenters:centers,asOf:now});
   });
   router.get("/planner/forecast-attention",plannerOnly,async(req,res)=>{
     const query=z.object({filter:z.enum(['RISK','LATE','DATA']).default('RISK'),page:z.coerce.number().int().min(1).max(100000).default(1)}).parse(req.query);

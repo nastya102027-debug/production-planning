@@ -307,6 +307,14 @@ try {
   const isolatedCenter=await prisma.workCenter.create({data:{name:'Тест вместимости',parallelSlots:1}});
   const competitor=await prisma.operation.create({data:{launchItemId:capacityLaunch.items[0].id,workCenterId:isolatedCenter.id,title:'Другой заказ',quantity:1,normHours:2,queueOrder:-100}});
   const queued=await prisma.operation.create({data:{launchItemId:first.launchItemId,workCenterId:isolatedCenter.id,title:'Ожидающая задача',quantity:1,normHours:3}});
+  const analyticsNow=new Date(), analyticsStart=new Date(analyticsNow.getTime()-4*3600000), pausedAt=new Date(analyticsNow.getTime()-3*3600000), resumedAt=new Date(analyticsNow.getTime()-2*3600000), finishedAt=new Date(analyticsNow.getTime()-3600000);
+  const analyticsOperation=await prisma.operation.create({data:{launchItemId:capacityLaunch.items[0].id,workCenterId:isolatedCenter.id,title:'Аналитическая задача',quantity:1,status:'COMPLETED',timeEntries:{create:{userId:planner.id,startedAt:analyticsStart,finishedAt}},statusHistory:{create:[{changedById:planner.id,fromStatus:'IN_PROGRESS',toStatus:'PAUSED',reason:'Тестовая остановка',changedAt:pausedAt},{changedById:planner.id,fromStatus:'PAUSED',toStatus:'IN_PROGRESS',changedAt:resumedAt},{changedById:planner.id,fromStatus:'IN_PROGRESS',toStatus:'COMPLETED',changedAt:finishedAt}]}}});
+  const analyticsDate=analyticsNow.toISOString().slice(0,10);
+  check((await request(`/planner/analytics?from=${analyticsDate}&to=${analyticsDate}`,workerCookie)).status===403,'Employee cannot read production analytics');
+  check((await request('/planner/analytics?from=invalid&to=2026-09-09',cookie)).status===400,'Analytics rejects invalid reporting period');
+  const analytics=await request(`/planner/analytics?from=${analyticsDate}&to=${analyticsDate}&workCenterId=${isolatedCenter.id}`,cookie);
+  check(analytics.data.totals.workSeconds>=3*3600 && analytics.data.totals.downtimeSeconds>=3600 && analytics.data.totals.stops>=1 && analytics.data.totals.completed>=1 && analytics.data.stops.some(stop=>stop.operationId===analyticsOperation.id&&stop.reason==='Тестовая остановка'),'Analytics reports work downtime completed task and stop reason');
+  check((await request(`/planner/analytics?from=${analyticsDate}&to=${analyticsDate}&workCenterId=${centerA.id}`,cookie)).data.stops.every(stop=>stop.center===centerA.name),'Analytics filters a work center server-side');
   const capacityResult=await request(`/operations/${queued.id}/forecast`,cookie);
   check(capacityResult.data.stage.queueHours===2 && capacityResult.data.stage.afterTask===competitor.title,'Forecast includes queue competition from another order');
   await prisma.workCenter.update({where:{id:isolatedCenter.id},data:{parallelSlots:2}});
