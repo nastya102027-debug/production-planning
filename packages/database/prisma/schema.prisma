@@ -324,3 +324,11 @@ model IntegrationFieldMapping {
   updatedAt DateTime @updatedAt
   @@unique([source, targetField])
 }
+
+model StopReasonCatalog {
+  id String @id @default(uuid())
+  name String @unique
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
