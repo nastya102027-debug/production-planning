@@ -253,7 +253,7 @@ try {
     await page.getByRole("button", { name: "Закрыть карточку" }).click();
     await page.locator('.kanban-task').first().waitFor();
     await page.screenshot({ path: join(root, ".local", "kanban-verified.png"), fullPage: true });
-    check(await page.locator('.kanban-column').count() === 4 && await page.locator('.kanban-task').count() === 10, "Planner Kanban renders all ten test operations in four columns");
+    check(await page.locator('.kanban-column').count() === 4 && await page.locator('.kanban-task').count() === 10 && await page.locator('.kanban-column.queued h3').getByText('Ожидает',{exact:true}).count()===1 && await page.locator('.kanban-column.queued').evaluate(element=>getComputedStyle(element).borderTopColor)==='rgb(18, 52, 86)', "Planner Kanban uses configured status labels and colors");
     await page.locator('.kanban-column.queued .kanban-task').filter({has:page.getByText('Первый этап · 6 шт.',{exact:true})}).locator('.task-title').click();
     await page.getByRole('button',{name:'Сроки и очередь',exact:true}).click();
     const planDialog=page.getByRole('dialog',{name:'Планирование задачи',exact:true});
