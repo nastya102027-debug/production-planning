@@ -289,7 +289,7 @@ try {
     await workerPage.goto("http://localhost:5173");
     await workerPage.getByLabel("Логин", { exact: true }).fill("test-employee"); await workerPage.getByLabel("Пароль", { exact: true }).fill(password); await workerPage.getByRole("button", { name: "Войти", exact: true }).click();
     await workerPage.locator('.kanban-task').first().waitFor();
-    check(await workerPage.getByRole('button', { name: 'Запуски', exact: true }).count() === 0 && await workerPage.locator('.kanban-task').count() === 7, "Employee browser shows only own tasks and no planner navigation");
+    check(await workerPage.getByRole('button', { name: 'Запуски', exact: true }).count() === 0 && await workerPage.locator('.kanban-task').count() === 7 && await workerPage.getByLabel('Статус задач', { exact: true }).count() === 0, "Employee browser shows only own tasks with a compact work screen");
     await workerPage.locator('.kanban-column.queued .kanban-task').filter({ has: workerPage.getByText('Первый этап · 6 шт.', { exact: true }) }).getByRole('button', { name: 'Начать', exact: true }).click();
     await workerPage.getByRole('dialog', { name: 'Начать работу' }).getByRole('button', { name: 'Начать работу', exact: true }).click();
     await workerPage.locator('.kanban-column.in_progress .kanban-task').filter({ hasText: 'Первый этап' }).getByRole('button', { name: 'Остановить', exact: true }).click();
