@@ -32,8 +32,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .launch-dates { display: flex; gap: 14px; padding: 16px 0; border-top: 1px solid #e6ebe5; }
 .launch-items-title { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; padding: 15px 0; }
 .launch-items-title span { font-size: 11px; color: #718076; }
-.launch-items>.route-search { display: grid; grid-template-columns: auto minmax(170px,250px); align-items: center; gap: 7px; width: min(100%,360px); margin: -5px 0 12px auto; font-size: 11px; color: #5d6d63; }
-.launch-items>.route-search input { min-width: 0; }
 .launch-items article { display: grid; grid-template-columns: 22px minmax(150px,1fr) 85px minmax(170px,1fr) auto auto auto; align-items: center; gap: 12px; padding: 16px 10px; border: 1px solid #e3e8e2; border-radius: 5px; margin-bottom: 10px; }
 .launch-items article.selected { background: #f7faf6; border-color: #8eaa95; }
 .launch-items article.disabled { opacity: .6; }
@@ -43,7 +41,28 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .route-button { display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid #d5dfd6; border-radius: 4px; color: #526a58; background: #fff; font: inherit; font-size: 11px; }
 .route-button svg { width: 15px; }
 .route-button.route-delete { color: #a24842; border-color: #ead1ce; }
-.route-choice { min-width: 0; }
+.route-choice { position: relative; display: grid; min-width: 0; gap: 6px; color: #536259; font-size: 12px; }
+.route-choice-toggle { display: flex; min-width: 0; min-height: 42px; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid #cbd6ce; border-radius: 7px; background: #fff; color: #26372d; text-align: left; transition: border-color .18s ease, box-shadow .18s ease, background .18s ease; }
+.route-choice-toggle b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
+.route-choice-toggle svg { flex: 0 0 auto; color: #75867b; transition: transform .18s ease; }
+.route-choice-toggle:hover:not(:disabled), .route-choice-toggle[aria-expanded="true"] { border-color: #a94a42; background: #fffaf8; box-shadow: 0 2px 9px rgba(114,55,48,.12); }
+.route-choice-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.route-choice-toggle.selected { border-color: #9ebdaf; background: #f5faf6; }
+.route-choice-menu { position: absolute; z-index: 30; top: calc(100% + 7px); right: 0; width: max(100%, 330px); overflow: hidden; border: 1px solid #cbd6ce; border-radius: 9px; background: #fff; box-shadow: 0 12px 28px rgba(39,55,45,.18); }
+.route-choice-menu > input { width: calc(100% - 20px); margin: 10px; padding: 9px 10px; }
+.route-choice-results { max-height: 260px; overflow-y: auto; border-top: 1px solid #edf0ed; }
+.route-choice-results section { padding: 7px 0; }
+.route-choice-results section + section { border-top: 1px solid #edf0ed; }
+.route-choice-results section > small { display: block; padding: 2px 12px 6px; color: #78867d; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.route-choice-result { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; border: 0; background: transparent; color: #28382f; text-align: left; }
+.route-choice-result:hover { background: #f6f9f6; }
+.route-choice-result span { display: grid; min-width: 0; gap: 2px; }
+.route-choice-result b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.route-choice-result small { color: #78867d; font-size: 11px; }
+.route-choice-result em { flex: 0 0 auto; border-radius: 99px; background: #eef3ee; color: #5b6d61; padding: 3px 6px; font-size: 10px; font-style: normal; }
+.route-choice-results p { margin: 0; padding: 20px 12px; color: #78867d; text-align: center; }
+.route-library-link { width: 100%; border: 0; border-top: 1px solid #e3e9e3; border-radius: 0; background: #fafcf9; color: #9d4039; padding: 10px 12px; font-size: 12px; font-weight: 700; text-align: left; }
+.route-library-link:hover { background: #fdf5f2; color: #7d302b; }
 .launch-editor>footer { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding-top: 20px; }
 .launch-editor>footer>div { display: flex; gap: 8px; font-size: 12px; }
 .planning-error, .planning-success, .planning-warning { padding: 12px 16px; margin: 12px 0; border-radius: 4px; font-size: 13px; }
