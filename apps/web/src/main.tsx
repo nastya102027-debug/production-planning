@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { AlertTriangle, Boxes, ClipboardList, Factory, LogOut, PackageCheck, Plus, Search, X, Clock } from "lucide-react";
+import { AlertTriangle, Boxes, ClipboardList, Factory, LogOut, PackageCheck, Plus, Search, X, Clock, Route as RouteIcon } from "lucide-react";
 import "./styles.css";
 import "./interaction.css";
 import "./latuning-theme.css";
@@ -14,6 +14,7 @@ import { Dashboard } from "./dashboard";
 import { OrderForecast } from "./order-forecast";
 import { Analytics } from "./analytics";
 import { IntegrationMapping } from "./integration-mapping";
+import { RouteTemplates } from "./route-templates";
 
 type User = { firstName:string; lastName:string; role:"PLANNER"|"EMPLOYEE"; workCenters:{workCenter:{id:string;name:string}}[] };
 type Summary = { orders:number; inProcurement:number; operations:number; stopped:number };
@@ -23,8 +24,8 @@ type Order = { updatedAt:string; archivedAt?:string; id:string; productionOrderN
 type Procurement = { id:string; status:string; startedAt:string; expectedAt?:string; readyAt?:string; deadlineState:string; comment?:string; responsible?:{id:string;firstName:string;lastName:string}; order:Order };
 type UserOption = { id:string; firstName:string; lastName:string; role:string };
 type DraftItem = { id?:string; updatedAt?:string; comment?:string; name:string; quantity:number|""; unitPrice:number };
-type Page = "overview"|"orders"|"procurement"|"launches"|"problems"|"centers"|"staff"|"analytics"|"integration";
-const pages:Page[]=["overview","orders","procurement","launches","problems","centers","staff","analytics","integration"];
+type Page = "overview"|"orders"|"procurement"|"launches"|"templates"|"problems"|"centers"|"staff"|"analytics"|"integration";
+const pages:Page[]=["overview","orders","procurement","launches","templates","problems","centers","staff","analytics","integration"];
 
 async function api<T>(path:string, init?:RequestInit):Promise<T> {
   const response = await fetch(`/api${path}`, { ...init, credentials:"include", headers:{"Content-Type":"application/json",...init?.headers} });
@@ -208,12 +209,12 @@ function Shell({user,onLogout}:{user:User;onLogout:()=>void}) {
   const [page,setPage]=useState<Page>(initialLocation.page); const [center,setCenter]=useState(initialLocation.center); const [focus,setFocus]=useState(initialLocation.focus);
   const navigate=(nextPage:Page,nextCenter="",nextFocus="")=>{const safePage=employee?"overview":nextPage;setPage(safePage);setCenter(safePage==="centers"?nextCenter:"");setFocus(safePage==="centers"?nextFocus:"");const params=new URLSearchParams({page:safePage});if(safePage==="centers"&&nextCenter)params.set("center",nextCenter);if(safePage==="centers"&&nextFocus)params.set("task",nextFocus);window.history.pushState(null,"",`#${params.toString()}`);};
   useEffect(()=>{const restore=()=>{const saved=locationState();setPage(saved.page);setCenter(saved.center);setFocus(saved.focus);};window.addEventListener("popstate",restore);window.addEventListener("hashchange",restore);return()=>{window.removeEventListener("popstate",restore);window.removeEventListener("hashchange",restore);};},[]);
-  const titles:Record<Page,string>={overview:employee?`Мой участок — ${user.workCenters[0]?.workCenter.name??"не назначен"}`:"Производство сегодня",orders:"Заказы",procurement:"Закупка",launches:"Производственные запуски",problems:"Уведомления Планеру",staff:"Сотрудники",analytics:"Аналитика",centers:"Производственные участки",integration:"Настройки"};
+  const titles:Record<Page,string>={overview:employee?`Мой участок — ${user.workCenters[0]?.workCenter.name??"не назначен"}`:"Производство сегодня",orders:"Заказы",procurement:"Закупка",launches:"Производственные запуски",templates:"Шаблоны маршрутов",problems:"Уведомления Планеру",staff:"Сотрудники",analytics:"Аналитика",centers:"Производственные участки",integration:"Настройки"};
   const openCenter=(id:string)=>navigate("centers",id);
   const openTask=(id:string)=>navigate(id?"centers":"problems","",id);
   const openSearch=(item:SearchResult)=>{if(item.type==="operation")navigate("centers",item.centerId||"",item.id);else if(item.type==="employee")navigate("staff");else if(item.type==="launch")navigate("launches");else navigate("orders");};
   const nav=(target:Page,Icon:typeof Factory,label:string)=><button className={page===target?"active":""} onClick={()=>navigate(target)}><Icon/> {label}</button>;
-  return <div className="shell"><aside><div className="logo"><span>К</span><b>LATUNING</b></div><nav>{nav("overview",Factory,employee?"Мой участок":"Обзор")}{!employee&&<>{nav("orders",ClipboardList,"Заказы")}{nav("procurement",PackageCheck,"Закупка")}{nav("launches",Boxes,"Запуски")}{nav("centers",Factory,"Участки")}{nav("problems",AlertTriangle,"Уведомления")}{nav("staff",Factory,"Сотрудники")}{nav("analytics",Clock,"Аналитика")}{nav("integration",PackageCheck,"Настройки")}</>}</nav><button className="logout" onClick={onLogout}><LogOut/> Выйти</button></aside><main><header><div><p>{employee?"РАБОЧЕЕ МЕСТО":"ЦЕНТР УПРАВЛЕНИЯ"}</p><h1>{titles[page]}</h1></div><div className="header-tools">{!employee&&<GlobalSearch onSelect={openSearch}/>} {!employee&&<Notifications compact onOpen={openTask}/>}<span className="avatar">{user.firstName[0]}{user.lastName[0]}</span><div><b>{user.firstName} {user.lastName}</b><small>{employee?"Сотрудник участка":"Планер"}</small></div></div></header>{employee?<OperationsScreen/>:page==="integration"?<IntegrationMapping/>:page==="analytics"?<Analytics onOpenTask={openTask}/>:page==="staff"?<StaffScreen/>:page==="orders"?<OrdersScreen/>:page==="procurement"?<ProcurementScreen/>:page==="overview"?<Dashboard onOpenTask={openTask}/>:page==="launches"?<PlanningScreen onOpenCenter={openCenter}/>:page==="centers"?<OperationsScreen key={center} planner initialCenter={center} focusId={focus}/>:page==="problems"?<Notifications onOpen={openTask}/>:<div className="content"><EmptyPanel eyebrow="РАЗДЕЛ" title={titles[page]} icon={Factory} text="Раздел готовится"/></div>}</main></div>;
+  return <div className="shell"><aside><div className="logo"><span>К</span><b>LATUNING</b></div><nav>{nav("overview",Factory,employee?"Мой участок":"Обзор")}{!employee&&<>{nav("orders",ClipboardList,"Заказы")}{nav("procurement",PackageCheck,"Закупка")}{nav("launches",Boxes,"Запуски")}{nav("templates",RouteIcon,"Шаблоны")}{nav("centers",Factory,"Участки")}{nav("problems",AlertTriangle,"Уведомления")}{nav("staff",Factory,"Сотрудники")}{nav("analytics",Clock,"Аналитика")}{nav("integration",PackageCheck,"Настройки")}</>}</nav><button className="logout" onClick={onLogout}><LogOut/> Выйти</button></aside><main><header><div><p>{employee?"РАБОЧЕЕ МЕСТО":"ЦЕНТР УПРАВЛЕНИЯ"}</p><h1>{titles[page]}</h1></div><div className="header-tools">{!employee&&<GlobalSearch onSelect={openSearch}/>} {!employee&&<Notifications compact onOpen={openTask}/>}<span className="avatar">{user.firstName[0]}{user.lastName[0]}</span><div><b>{user.firstName} {user.lastName}</b><small>{employee?"Сотрудник участка":"Планер"}</small></div></div></header>{employee?<OperationsScreen/>:page==="integration"?<IntegrationMapping/>:page==="analytics"?<Analytics onOpenTask={openTask}/>:page==="staff"?<StaffScreen/>:page==="orders"?<OrdersScreen/>:page==="procurement"?<ProcurementScreen/>:page==="overview"?<Dashboard onOpenTask={openTask}/>:page==="launches"?<PlanningScreen onOpenCenter={openCenter}/>:page==="templates"?<RouteTemplates/>:page==="centers"?<OperationsScreen key={center} planner initialCenter={center} focusId={focus}/>:page==="problems"?<Notifications onOpen={openTask}/>:<div className="content"><EmptyPanel eyebrow="РАЗДЕЛ" title={titles[page]} icon={Factory} text="Раздел готовится"/></div>}</main></div>;
 }
 
 function App() { const [user,setUser]=useState<User|null>(null); const [loading,setLoading]=useState(true); useEffect(()=>{api<User>("/me").then(setUser).catch(()=>{}).finally(()=>setLoading(false));},[]); if(loading)return <div className="splash">LATUNING</div>; if(!user)return <Login onLogin={setUser}/>; return <Shell user={user} onLogout={async()=>{await api("/auth/logout",{method:"POST"});setUser(null);}}/>; }
