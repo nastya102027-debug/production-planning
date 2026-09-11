@@ -105,6 +105,26 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .step-actions svg { width: 14px; height: 14px; }
 .route-builder>footer, .task-dialog>footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 22px; padding-top: 16px; border-top: 1px solid #e0e7df; }
 .task-dialog { width: min(620px,95vw); max-height: 90vh; overflow: auto; padding: 24px; background: #fff; border-radius: 8px; box-shadow: 0 22px 65px #0003; }
+.task-dialog[aria-label="Карточка задачи"] { width:min(780px,94vw); padding:28px 30px; }
+.task-dialog[aria-label="Карточка задачи"]>header { padding-bottom:16px; border-bottom:1px solid #e0e7df; }
+.task-dialog[aria-label="Карточка задачи"]>header h2 { font-size:24px; line-height:1.25; }
+.task-dialog[aria-label="Карточка задачи"]>.kanban-task { display:grid; gap:14px; margin:18px 0; padding:18px; border-radius:8px; border-color:#cfdad2; box-shadow:none; }
+.task-dialog[aria-label="Карточка задачи"] .task-title { gap:8px; pointer-events:none; }
+.task-dialog[aria-label="Карточка задачи"] .task-title b { font-size:17px; }
+.task-dialog[aria-label="Карточка задачи"] .task-title span { font-size:14px; color:#53645b; }
+.task-dialog[aria-label="Карточка задачи"] .task-title small,.task-dialog[aria-label="Карточка задачи"]>.kanban-task>small { font-size:12px; color:#66786d; }
+.task-dialog[aria-label="Карточка задачи"] .task-meta { margin:0; padding:10px 12px; background:#f5f8f5; border-radius:6px; font-size:12px; }
+.task-dialog[aria-label="Карточка задачи"] .task-dates { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:0; }
+.task-dialog[aria-label="Карточка задачи"] .task-dates dt { font-size:11px; }.task-dialog[aria-label="Карточка задачи"] .task-dates dd { font-size:13px; white-space:normal; }
+.task-dialog[aria-label="Карточка задачи"] .dependency-note,.task-dialog[aria-label="Карточка задачи"] .stop-note { margin:0; padding:11px 12px; font-size:13px; border-radius:6px; }
+.task-dialog[aria-label="Карточка задачи"] .task-time { margin:0; font-size:13px; }
+.task-dialog[aria-label="Карточка задачи"] .task-actions { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:9px; margin:4px 0 0; }
+.task-dialog[aria-label="Карточка задачи"] .task-actions button { min-height:46px; justify-content:center; padding:10px 12px; font-size:13px; border-radius:6px; }
+.task-dialog[aria-label="Карточка задачи"] .task-actions button svg { width:18px; height:18px; }
+.task-dialog[aria-label="Карточка задачи"] .task-actions button:first-child:not(.danger) { background:#e8f3ea; border-color:#b8d2bd; color:#245f39; font-weight:700; }
+.task-dialog[aria-label="Карточка задачи"] .task-actions button[aria-label="Комментарий"]::after { content:"Комментарий"; }
+.task-dialog[aria-label="Карточка задачи"] .task-actions button[aria-label="Сообщить о проблеме"]::after { content:"Сообщить о проблеме"; }
+@media(max-width:600px){.task-dialog[aria-label="Карточка задачи"]{padding:20px}.task-dialog[aria-label="Карточка задачи"] .task-dates{grid-template-columns:1fr}.task-dialog[aria-label="Карточка задачи"] .task-actions{grid-template-columns:1fr}}
 .task-dialog label { margin-top: 14px; }
 .task-dialog textarea { min-height: 95px; resize: vertical; }
 .task-dialog>p { font-size: 13px; color: #718076; }
