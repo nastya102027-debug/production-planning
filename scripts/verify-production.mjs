@@ -99,6 +99,8 @@ try {
   const changedTemplate={...templateBody,name:"Зеркало поворотное — копия",nodes:templateBody.nodes.map(node=>node.id==='saw'?{...node,material:"МДФ 16 мм"}:node)};
   const editedTemplate=await request(`/route-templates/${copiedTemplate.data.id}`,cookie,changedTemplate,"PUT");
   check(editedTemplate.status===200 && editedTemplate.data.steps.find(step=>step.title==='Пила').material==='МДФ 16 мм' && template.data.steps.find(step=>step.title==='Пила').material==='Латунь 5 мм',"Editing a copied template does not change its source template");
+  const metadataTemplate=await request(`/route-templates/${copiedTemplate.data.id}`,cookie,{name:"Template metadata",description:"Metadata edit",category:"Metadata"},"PATCH");
+  check(metadataTemplate.status===200 && metadataTemplate.data.name==="Template metadata" && metadataTemplate.data.category==="Metadata","Planner edits route template metadata");
   check((await request(`/route-templates/${template.data.id}`,cookie,undefined,"DELETE")).data.archived===true && (await request("/route-templates",cookie)).data.every(row=>row.id!==template.data.id),"Used route template is archived instead of physically deleted");
   const routeBody = { name: "Параллельный маршрут", steps: [{ title: "Первый этап", workCenterId: centerA.id, predecessorIndexes: [] }, { title: "Ветка А", workCenterId: centerA.id, predecessorIndexes: [0] }, { title: "Ветка Б", workCenterId: centerB.id, predecessorIndexes: [0] }, { title: "Завершающий этап", workCenterId: centerA.id, predecessorIndexes: [1, 2] }] };
   const route = await request(`/order-items/${item.id}/routes`, cookie, routeBody);
