@@ -91,6 +91,8 @@ try {
   const launch = await request("/launches", cookie, body); assert.equal(launch.status, 201);
   const tasks = launch.data.items[0].operations;
   check(tasks.length === 4 && tasks.every(task => task.quantity === 4 && task.dueDate === order.dueDate), "Partial launch creates every stage and inherits order deadline");
+  const firstOperationCard = await request(`/operations/${tasks[0].id}`, cookie);
+  check(firstOperationCard.status === 200 && firstOperationCard.data.itemId === item.id && firstOperationCard.data.route.steps.length === 4, "Operation cards include their order item and route stages");
   const first = tasks.find(task => task.title === "Первый этап"), branchA = tasks.find(task => task.title === "Ветка А"), branchB = tasks.find(task => task.title === "Ветка Б"), last = tasks.find(task => task.title === "Завершающий этап");
   const plan = { normHours:8, riskHours:2, priority: "HIGH", queueOrder: -10, plannedStart: "2026-09-09T08:00:00Z", plannedFinish: "2026-09-10T16:00:00Z", planVersion: 0 };
   check((await request(`/operations/${first.id}/plan`, workerCookie, plan, "PATCH")).status === 403, "Employee cannot change task schedule");
