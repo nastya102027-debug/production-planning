@@ -121,12 +121,14 @@ export function productionRouter(prisma: PrismaClient) {
 
   function presentOperation(operation: Prisma.OperationGetPayload<{ include: typeof operationInclude }>) {
     const now = new Date();
+    const actualStart=operation.timeEntries.reduce<Date|undefined>((first,entry)=>!first||entry.startedAt<first?entry.startedAt:first,undefined);
+    const actualFinish=[...operation.statusHistory].reverse().find(event=>event.toStatus==="COMPLETED")?.changedAt;
     return { normHours: operation.normHours, riskHours: operation.riskHours, id: operation.id, title: operation.title, quantity: operation.quantity, status: operation.status, priority: operation.priority,
       comment: operation.comment, stopReason: operation.stopReason, assignee: operation.assignee, workCenter: { id: operation.workCenter.id, name: operation.workCenter.name },
       orderNumber: operation.launchItem.orderItem.order.productionOrderNumber, itemId: operation.launchItem.orderItem.id, itemQuantity: operation.launchItem.orderItem.quantity, itemName: operation.launchItem.orderItem.name, launchNumber: operation.launchItem.launch.number,
       route: { id: operation.launchItem.route.id, name: operation.launchItem.route.name, steps: operation.launchItem.route.steps.map(step => ({ id: step.id, title: step.title, workCenter: step.workCenter.name, material: step.material, quantity: step.quantity, unit: step.unit, components: step.components })) },
       plannedStart: operation.plannedStart ?? operation.launchItem.launch.plannedStart, stagePlannedStart: operation.plannedStart, plannedFinish: operation.plannedFinish, queueOrder: operation.queueOrder, planVersion: operation.planVersion, dueDate: operation.plannedFinish ?? operation.dueDate, predecessors: operation.predecessors.map(link => link.predecessor),
-      workSeconds: elapsedSeconds(operation.timeEntries, now), downtimeSeconds: downtimeSeconds(operation.statusHistory, now), serverNow: now.toISOString(),
+      actualStart, actualFinish, workSeconds: elapsedSeconds(operation.timeEntries, now), downtimeSeconds: downtimeSeconds(operation.statusHistory, now), serverNow: now.toISOString(),
       history: operation.statusHistory.map(event => ({ id: event.id, status: event.toStatus, reason: event.reason, at: event.changedAt, actor: `${event.changedBy.lastName} ${event.changedBy.firstName}` })) };
   }
   router.get("/operations", async (req, res) => {

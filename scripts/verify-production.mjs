@@ -165,6 +165,8 @@ try {
   check(partial.data.status === "PARTIALLY_READY" && partial.data.items[0].completedQuantity === 4 && partial.data.completedTotal === 400, "Completion counts finished launch quantity once, not each route stage");
   const noOpenTime = await prisma.operationTimeEntry.count({ where: { operationId: first.id, finishedAt: null } });
   check(noOpenTime === 0, "Completed operation has no running time interval");
+  const completedCard=await request(`/operations/${first.id}`,cookie);
+  check(completedCard.data.actualStart && completedCard.data.actualFinish && new Date(completedCard.data.actualFinish)>=new Date(completedCard.data.actualStart),"Operation card exposes actual start and completion timestamps");
   const editBody = { productionOrderNumber: "TEST-100", organization: "LATUNING", drawingApprovalDate: "2026-09-08", productionLeadDays: 12, updatedAt: partial.data.updatedAt, items: [{ id: item.id, name: "Уточнённая деталь", quantity: 10, unitPrice: 125 }] };
   check((await request(`/orders/${order.id}`, workerCookie, editBody, "PUT")).status === 403, "Employee cannot edit order");
   check((await request(`/orders/${order.id}`, cookie, { ...editBody, items: [{ ...editBody.items[0], quantity: 9 }] }, "PUT")).status === 409, "Order quantity cannot fall below launched quantity");

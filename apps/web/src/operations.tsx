@@ -5,12 +5,13 @@ import { productionApi as api, useProductionEvents } from "./production-api";
 import "./planning.css";
 
 type Assignee = { id:string; firstName:string; lastName:string; active?:boolean };
-type Operation = { normHours?:number|null; riskHours?:number|null; assignee?:Assignee|null; id: string; title: string; quantity: number; status: string; priority: string; dueDate?: string; plannedStart?: string; stagePlannedStart?:string; plannedFinish?:string; queueOrder:number; planVersion:number; comment?: string; stopReason?: string;
+type Operation = { normHours?:number|null; riskHours?:number|null; assignee?:Assignee|null; id: string; title: string; quantity: number; status: string; priority: string; dueDate?: string; plannedStart?: string; stagePlannedStart?:string; plannedFinish?:string; actualStart?:string;actualFinish?:string;queueOrder:number; planVersion:number; comment?: string; stopReason?: string;
   workCenter: { id: string; name: string }; orderNumber: string; itemId:string; itemQuantity:number; itemName: string; launchNumber: string; route:{id:string;name:string;steps:{id:string;title:string;workCenter:string;material?:string|null;quantity?:number|null;unit?:string|null;components:{name:string;material:string;quantity:number;unit:string}[]}[]}; predecessors: { id: string; title: string; status: string }[];
   workSeconds: number; downtimeSeconds: number; serverNow: string; history: { id: string; at: string; actor: string; status: string; reason?: string }[] };
 const defaultLabels: Record<string, string> = { QUEUED: "К запуску", IN_PROGRESS: "В работе", PAUSED: "Остановлено", COMPLETED: "Готово", CANCELLED: "Отменено" };
 const priorities: Record<string, string> = { LOW: "Низкий", NORMAL: "Обычный", HIGH: "Высокий", CRITICAL: "Критический" };
 const date = (value?: string) => value ? new Date(value).toLocaleDateString("ru-RU") : "—";
+const dateTime = (value?: string) => value ? new Date(value).toLocaleString("ru-RU",{dateStyle:"short",timeStyle:"short"}) : "—";
 const duration = (seconds: number) => `${Math.floor(seconds / 3600)} ч ${Math.floor(seconds % 3600 / 60)} мин ${Math.floor(seconds % 60)} с`;
 
 function TaskCard({ task, onAction, onOpen, now, labels, canCancel = false }: { task: Operation; onAction: (task: Operation, action: string) => void; onOpen: () => void; now: number; labels:Record<string,string>; canCancel?: boolean }) {
@@ -19,6 +20,7 @@ function TaskCard({ task, onAction, onOpen, now, labels, canCancel = false }: { 
   return <article className={`kanban-task ${task.status.toLowerCase()}`}>
     <button className="task-title" onClick={onOpen}><small>Заказ № {task.orderNumber} · {task.workCenter.name}</small><b>{task.itemName}</b><span>{task.title} · {task.quantity} шт.</span></button>
     <div className="task-meta"><span className={task.dueDate && new Date(task.dueDate).getTime() < now && task.status !== "COMPLETED" ? "late" : ""}>Срок: {date(task.dueDate)}</span><span>{priorities[task.priority]}</span></div>
+    <dl className="task-dates"><div><dt>Плановое начало</dt><dd>{dateTime(task.plannedStart)}</dd></div><div><dt>Плановое завершение</dt><dd>{dateTime(task.dueDate)}</dd></div>{task.actualStart&&<div><dt>Фактическое начало</dt><dd>{dateTime(task.actualStart)}</dd></div>}{task.actualFinish&&<div><dt>Фактическое завершение</dt><dd>{dateTime(task.actualFinish)}</dd></div>}</dl>
     <small>Очередь: {task.queueOrder} · Запуск № {task.launchNumber}{task.plannedStart ? ` · начало ${date(task.plannedStart)}` : ""}</small>
     <small>Исполнитель: {task.assignee?`${task.assignee.lastName} ${task.assignee.firstName}${task.assignee.active===false?" (доступ отключён)":""}`:"Не назначен"}</small>
     {blocked && task.status === "QUEUED" && <p className="dependency-note">Ожидает: {task.predecessors.filter(step => step.status !== "COMPLETED").map(step => step.title).join(", ")}</p>}
