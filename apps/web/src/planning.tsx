@@ -13,6 +13,7 @@ type Operation = { id:string; title:string; quantity:number; completedQuantity:n
 type LaunchItem = { id:string; quantity:number; orderItem:OrderItem; route:ProductionRoute; operations:Operation[] };
 type Launch = { id:string; number:string; priority:string; plannedStart?:string; plannedFinish?:string; order:Order; items:LaunchItem[] };
 type ItemDraft = { selected:boolean; quantity:number|""; routeId:string };
+type RouteTemplate = { id:string; name:string; description?:string|null; category?:string|null; updatedAt:string; steps:{id:string;workCenter:WorkCenter}[] };
 
 
 async function api<T>(path:string,init?:RequestInit):Promise<T>{
@@ -39,6 +40,7 @@ export function PlanningScreen({onOpenCenter}:{onOpenCenter:(id:string)=>void}){
   const [centers,setCenters]=useState<WorkCenter[]>([]);
   const [selectedOrderId,setSelectedOrderId]=useState("");
   const [routes,setRoutes]=useState<Record<string,ProductionRoute[]>>({});
+  const [templates,setTemplates]=useState<RouteTemplate[]>([]);
   const [drafts,setDrafts]=useState<Record<string,ItemDraft>>({});
   const [routeItem,setRouteItem]=useState<OrderItem|null>(null);
   const [plannedStart,setPlannedStart]=useState("");
@@ -51,9 +53,9 @@ export function PlanningScreen({onOpenCenter}:{onOpenCenter:(id:string)=>void}){
   const [operationLabels,setOperationLabels]=useState(defaultOperationLabels);
 
   async function load(){
-    const [orderResult,nextLaunches,nextCenters]=await Promise.all([api<{items:Order[];total:number}>(`/planning/orders?search=${encodeURIComponent(search)}&page=${orderPage}`),api<Launch[]>(`/launches?page=${launchPage}`),api<(WorkCenter & {counts:Record<string,number>})[]>("/planning/centers")]);
+    const [orderResult,nextLaunches,nextCenters,nextTemplates]=await Promise.all([api<{items:Order[];total:number}>(`/planning/orders?search=${encodeURIComponent(search)}&page=${orderPage}`),api<Launch[]>(`/launches?page=${launchPage}`),api<(WorkCenter & {counts:Record<string,number>})[]>("/planning/centers"),api<RouteTemplate[]>("/route-templates")]);
     const nextOrders=orderResult.items; setOrderTotal(orderResult.total); setCenterStats(nextCenters);
-    setOrders(nextOrders);setLaunches(nextLaunches);setCenters(nextCenters);setSelectedOrderId(current=>nextOrders.some(order=>order.id===current)?current:nextOrders[0]?.id||"");setLoading(false);
+    setOrders(nextOrders);setLaunches(nextLaunches);setCenters(nextCenters);setTemplates(nextTemplates);setSelectedOrderId(current=>nextOrders.some(order=>order.id===current)?current:nextOrders[0]?.id||"");setLoading(false);
   }
   useEffect(()=>{load().catch(error=>{setError(error instanceof Error?error.message:"Ошибка загрузки");setLoading(false);});},[search,orderPage,launchPage,revision]);
   useEffect(()=>{let active=true;api<{code:string;name:string}[]>("/operation-statuses").then(rows=>{if(active)setOperationLabels(current=>({...current,...Object.fromEntries(rows.map(row=>[row.code,row.name]))}));}).catch(()=>{});return()=>{active=false;};},[]);
@@ -76,6 +78,16 @@ export function PlanningScreen({onOpenCenter}:{onOpenCenter:(id:string)=>void}){
   const stopped=operations.filter(entry=>entry.operation.status==="PAUSED").length;
 
   function patchDraft(itemId:string,patch:Partial<ItemDraft>){setDrafts(current=>({...current,[itemId]:{...current[itemId],...patch}}));}
+  async function applyTemplate(item:OrderItem,templateId:string){
+    if(!templateId)return;
+    setError("");setSuccess("");
+    try{
+      const route=await api<ProductionRoute>(`/order-items/${item.id}/route-templates/${templateId}/apply`,{method:"POST",body:JSON.stringify({})});
+      setRoutes(current=>({...current,[item.id]:[route,...(current[item.id]||[])]}));
+      patchDraft(item.id,{selected:true,quantity:drafts[item.id]?.quantity||1,routeId:route.id});
+      setSuccess(`Шаблон «${route.name}» добавлен к позиции. При необходимости откройте маршрут и измените его перед запуском.`);
+    }catch(error){setError(error instanceof Error?error.message:"Не удалось применить шаблон маршрута");}
+  }
   async function submitLaunch(confirmed=false){
     setError("");setSuccess("");
     if(!selectedOrder){setError("Выберите заказ");return;}
@@ -105,8 +117,8 @@ export function PlanningScreen({onOpenCenter}:{onOpenCenter:(id:string)=>void}){
         <header><div><small>ЗАКАЗ НА ПРОИЗВОДСТВО</small><h3>№ {selectedOrder.productionOrderNumber}</h3><span>Срок: {dateLabel(selectedOrder.dueDate)}</span></div><div><label>Номер запуска<input value="Будет создан автоматически" readOnly/></label><label>Приоритет<select value={priority} onChange={event=>setPriority(event.target.value)}><option value="LOW">Низкий</option><option value="NORMAL">Обычный</option><option value="HIGH">Высокий</option><option value="CRITICAL">Критический</option></select></label></div></header>
         <div className="launch-dates"><label>Плановое начало<input type="date" value={plannedStart} onChange={event=>setPlannedStart(event.target.value)}/></label><label>Плановое завершение<input type="date" value={plannedFinish} readOnly/><small>Крайний срок заказа минус 3 рабочих дня</small></label></div>
         <div className="launch-items"><div className="launch-items-title"><b>Позиции запуска</b><span>Можно выбрать часть заказа или часть количества</span></div>{selectedOrder.items.map(item=>{
-          const launched=launchedByItem[item.id]||0;const available=Math.max(0,item.quantity-launched);const draft=drafts[item.id]||{selected:false,quantity:"",routeId:""};const itemRoutes=routes[item.id]||[];
-          return <article className={`${draft.selected?"selected":""} ${available===0?"disabled":""}`} key={item.id}><label className="item-check"><input type="checkbox" checked={draft.selected} disabled={available===0} onChange={event=>patchDraft(item.id,{selected:event.target.checked})}/><span/></label><div className="item-name"><b>{item.name}</b><span>Заказано: {item.quantity} · запущено: {launched} · доступно: {available}</span></div><label>Количество<input type="number" min="1" max={available} value={draft.quantity} disabled={!draft.selected} onChange={event=>patchDraft(item.id,{quantity:event.target.value?Number(event.target.value):""})}/></label><label>Маршрут<select aria-label="Маршрут" value={draft.routeId} disabled={!draft.selected} onChange={event=>patchDraft(item.id,{routeId:event.target.value})}><option value="">Выберите маршрут</option>{itemRoutes.map(route=><option value={route.id} key={route.id}>{route.name} · {route.steps.length} эт.</option>)}</select></label><button className="route-button" onClick={()=>{setEditRoute(undefined);setRouteItem(item);}}><RouteIcon/>{itemRoutes.length?"Новый":"Создать"}</button>{draft.routeId&&<button className="route-button" onClick={()=>{setEditRoute(itemRoutes.find(route=>route.id===draft.routeId));setRouteItem(item);}}>Изменить</button>}</article>;
+          const launched=launchedByItem[item.id]||0;const available=Math.max(0,item.quantity-launched);const draft=drafts[item.id]||{selected:false,quantity:"",routeId:""};const itemRoutes=routes[item.id]||[];const templatePicker=<label>Шаблон маршрута<select aria-label={`Шаблон маршрута для ${item.name}`} defaultValue="" disabled={available===0||templates.length===0} onChange={event=>void applyTemplate(item,event.target.value)}><option value="">{templates.length?"Выберите шаблон":"Нет сохранённых шаблонов"}</option>{templates.map(template=><option value={template.id} key={template.id}>{template.name} · {template.steps.length} эт.</option>)}</select></label>;
+          return <article className={`${draft.selected?"selected":""} ${available===0?"disabled":""}`} key={item.id}><label className="item-check"><input type="checkbox" checked={draft.selected} disabled={available===0} onChange={event=>patchDraft(item.id,{selected:event.target.checked})}/><span/></label>{templatePicker}<div className="item-name"><b>{item.name}</b><span>Заказано: {item.quantity} · запущено: {launched} · доступно: {available}</span></div><label>Количество<input type="number" min="1" max={available} value={draft.quantity} disabled={!draft.selected} onChange={event=>patchDraft(item.id,{quantity:event.target.value?Number(event.target.value):""})}/></label><label>Маршрут<select aria-label="Маршрут" value={draft.routeId} disabled={!draft.selected} onChange={event=>patchDraft(item.id,{routeId:event.target.value})}><option value="">Выберите маршрут</option>{itemRoutes.map(route=><option value={route.id} key={route.id}>{route.name} · {route.steps.length} эт.</option>)}</select></label><button className="route-button" onClick={()=>{setEditRoute(undefined);setRouteItem(item);}}><RouteIcon/>{itemRoutes.length?"Новый":"Создать"}</button>{draft.routeId&&<button className="route-button" onClick={()=>{setEditRoute(itemRoutes.find(route=>route.id===draft.routeId));setRouteItem(item);}}>Изменить</button>}</article>;
         })}</div>
         {error&&<div className="planning-error">{error}</div>}{success&&<div className="planning-success"><CheckCircle2/>{success}</div>}
         <footer><div><b>{Object.values(drafts).filter(draft=>draft.selected).length}</b><span>позиций выбрано</span></div><button className="primary launch-button" onClick={()=>submitLaunch()} disabled={submitting}><Play/>{submitting?"Создаю запуск…":"Запустить в производство"}</button></footer>
