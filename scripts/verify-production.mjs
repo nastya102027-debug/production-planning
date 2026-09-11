@@ -355,6 +355,7 @@ try {
   check((await request('/planner/analytics?from=invalid&to=2026-09-09',cookie)).status===400,'Analytics rejects invalid reporting period');
   const analytics=await request(`/planner/analytics?from=${analyticsDate}&to=${analyticsDate}&workCenterId=${isolatedCenter.id}`,cookie);
   check(analytics.data.totals.workSeconds>=3*3600 && analytics.data.totals.downtimeSeconds>=3600 && analytics.data.totals.stops>=1 && analytics.data.totals.completed>=1 && analytics.data.stops.some(stop=>stop.operationId===analyticsOperation.id&&stop.reason==='Тестовая остановка'),'Analytics reports work downtime completed task and stop reason');
+  check(analytics.data.problems.averageResolutionSeconds>=3600 && analytics.data.problems.frequentCenters.some(row=>row.id===isolatedCenter.id) && analytics.data.problems.orders.some(row=>row.number==='TEST-CAPACITY'),'Problem analytics reports average resolution, frequent centers and affected orders');
   check(analytics.data.totals.plannedSeconds>=3*3600,'Analytics reports planned seconds');
   check(analytics.data.centers[0].planKnown,'Analytics marks known center plan');
   check(analytics.data.employees.some(employee=>employee.id===planner.id&&employee.workSeconds>=3*3600&&employee.completed>=1),'Analytics reports employee productivity');

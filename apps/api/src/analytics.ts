@@ -34,5 +34,8 @@ export function productionAnalytics(operations:Operation[],from:Date,to:Date,now
  const employeeRows=[...employees.values()].sort((a,b)=>b.workMs-a.workMs||a.name.localeCompare(b.name)).map(({workMs,...row})=>({...row,workSeconds:workMs/1000,averageSeconds:row.tasks?workMs/1000/row.tasks:0}));
  const totals=rows.reduce((sum,row)=>({workSeconds:sum.workSeconds+row.workSeconds,downtimeSeconds:sum.downtimeSeconds+row.downtimeSeconds,plannedSeconds:sum.plannedSeconds+row.plannedSeconds,missingPlan:sum.missingPlan+row.missingPlan,stops:sum.stops+row.stops,completed:sum.completed+row.completed,tasks:sum.tasks+row.tasks}),{workSeconds:0,downtimeSeconds:0,plannedSeconds:0,missingPlan:0,stops:0,completed:0,tasks:0});
  stops.sort((a,b)=>b.startedAt.getTime()-a.startedAt.getTime()||a.id.localeCompare(b.id));
- return {centers:rows,employees:employeeRows,totals,stops};
+ const orderProblems=new Map<string,{number:string;count:number;downtimeSeconds:number}>();
+ for(const stop of stops){if(stop.carried)continue;const row=orderProblems.get(stop.orderNumber)??{number:stop.orderNumber,count:0,downtimeSeconds:0};row.count++;row.downtimeSeconds+=stop.seconds;orderProblems.set(stop.orderNumber,row);}
+ const resolved=stops.filter(stop=>stop.finishedAt);
+ return {centers:rows,employees:employeeRows,totals,stops,problems:{averageResolutionSeconds:resolved.length?resolved.reduce((sum,stop)=>sum+stop.seconds,0)/resolved.length:0,frequentCenters:rows.filter(row=>row.stops>0).sort((a,b)=>b.stops-a.stops||b.downtimeSeconds-a.downtimeSeconds).slice(0,5).map(row=>({id:row.id,name:row.name,stops:row.stops,downtimeSeconds:row.downtimeSeconds})),orders:[...orderProblems.values()].sort((a,b)=>b.count-a.count||b.downtimeSeconds-a.downtimeSeconds||a.number.localeCompare(b.number)).slice(0,5)}};
 }
