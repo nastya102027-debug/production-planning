@@ -97,6 +97,9 @@ try {
   const launch = await request("/launches", cookie, body); assert.equal(launch.status, 201);
   const tasks = launch.data.items[0].operations;
   check(tasks.length === 4 && tasks.every(task => task.quantity === 4 && task.dueDate === order.dueDate), "Partial launch creates every stage and inherits order deadline");
+  const workerSummary=await request("/operations/summary",workerCookie);
+  const centerSummary=await request(`/operations/summary?workCenterId=${centerA.id}`,cookie);
+  check(workerSummary.status===200 && workerSummary.data.counts.QUEUED===3 && workerSummary.data.completedToday===0 && centerSummary.data.counts.QUEUED===3,"Operation summaries respect access and selected work center");
   const firstOperationCard = await request(`/operations/${tasks[0].id}`, cookie);
   check(firstOperationCard.status === 200 && firstOperationCard.data.itemId === item.id && firstOperationCard.data.route.steps.length === 4, "Operation cards include their order item and route stages");
   const first = tasks.find(task => task.title === "Первый этап"), branchA = tasks.find(task => task.title === "Ветка А"), branchB = tasks.find(task => task.title === "Ветка Б"), last = tasks.find(task => task.title === "Завершающий этап");

@@ -142,6 +142,16 @@ export function productionRouter(prisma: PrismaClient) {
     const [items, total, groups] = await prisma.$transaction([prisma.operation.findMany({ where, include: operationInclude, orderBy: [{ queueOrder: "asc" }, { priority: "desc" }, { dueDate: "asc" }, { id: "asc" }], skip: (query.page - 1) * 40, take: 40 }), prisma.operation.count({ where }), prisma.operation.groupBy({ by: ["status"], where, orderBy: { status: "asc" }, _count: true })]);
     res.json({ items: items.map(presentOperation), total, counts: Object.fromEntries(groups.map(group => [group.status, group._count])) });
   });
+  router.get("/operations/summary", async (req,res) => {
+    const workCenterId=z.object({workCenterId:z.string().uuid().optional()}).parse(req.query).workCenterId;
+    const where:Prisma.OperationWhereInput={...(req.session!.role==="PLANNER"?{}:{workCenter:{users:{some:{userId:req.session!.sub}}}}),...(workCenterId?{workCenterId}:{})};
+    const dayStart=new Date();dayStart.setUTCHours(0,0,0,0);
+    const [groups,completedToday]=await prisma.$transaction([
+      prisma.operation.groupBy({by:["status"],where,orderBy:{status:"asc"},_count:true}),
+      prisma.operationStatusHistory.count({where:{toStatus:"COMPLETED",changedAt:{gte:dayStart},operation:where}})
+    ]);
+    res.json({counts:Object.fromEntries(groups.map(group=>[group.status,group._count])),completedToday});
+  });
   router.get("/operations/:id", async (req, res) => {
     const operation = await prisma.operation.findFirst({ where: { id: String(req.params.id), ...(req.session!.role === "PLANNER" ? {} : { workCenter: { users: { some: { userId: req.session!.sub } } } }) }, include: operationInclude });
     if (!operation) throw new ProductionError(404, "Задача не найдена");
