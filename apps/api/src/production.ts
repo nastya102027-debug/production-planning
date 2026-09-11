@@ -25,7 +25,7 @@ const launchInclude = { order: true, items: { include: { orderItem: true, route:
 const operationInclude = {
   assignee: { select: { id: true, firstName: true, lastName: true, active: true } },
   workCenter: true, predecessors: { include: { predecessor: { select: { id: true, status: true, title: true, workCenter: { select: { name: true } } } } } },
-  launchItem: { include: { launch: { select: { number: true, plannedStart: true } }, route: { include: routeInclude }, orderItem: { select: { id: true, name: true, quantity: true, comment: true, order: { select: { id: true, productionOrderNumber: true } } } } } },
+  launchItem: { include: { launch: { select: { number: true, plannedStart: true } }, route: { include: routeInclude }, operations: { include: { workCenter: true, predecessors: true } }, orderItem: { select: { id: true, name: true, quantity: true, comment: true, order: { select: { id: true, productionOrderNumber: true } } } } } },
   timeEntries: true, statusHistory: { orderBy: { changedAt: "asc" as const }, include: { changedBy: { select: { firstName: true, lastName: true } } } }
 };
 
@@ -155,7 +155,7 @@ export function productionRouter(prisma: PrismaClient) {
     return { normHours: operation.normHours, riskHours: operation.riskHours, id: operation.id, title: operation.title, quantity: operation.quantity, status: operation.status, priority: operation.priority,
       comment: operation.comment, stopReason: operation.stopReason, assignee: operation.assignee, workCenter: { id: operation.workCenter.id, name: operation.workCenter.name },
       orderNumber: operation.launchItem.orderItem.order.productionOrderNumber, itemId: operation.launchItem.orderItem.id, itemQuantity: operation.launchItem.orderItem.quantity, itemName: operation.launchItem.orderItem.name, launchNumber: operation.launchItem.launch.number,
-      route: { id: operation.launchItem.route.id, name: operation.launchItem.route.name, steps: operation.launchItem.route.steps.map(step => ({ id: step.id, title: step.title, workCenter: step.workCenter.name, material: step.material, quantity: step.quantity, unit: step.unit, components: step.components })) },
+      route: { id: operation.launchItem.route.id, name: operation.launchItem.route.name, steps: operation.launchItem.route.steps.map(step => ({ id: step.id, title: step.title, workCenter: step.workCenter.name, material: step.material, quantity: step.quantity, unit: step.unit, components: step.components })) }, routeOperations: operation.launchItem.operations.map(stage=>({id:stage.id,status:stage.status,workCenter:stage.workCenter.name,predecessorIds:stage.predecessors.map(link=>link.predecessorId)})),
       plannedStart: operation.plannedStart ?? operation.launchItem.launch.plannedStart, stagePlannedStart: operation.plannedStart, plannedFinish: operation.plannedFinish, queueOrder: operation.queueOrder, planVersion: operation.planVersion, dueDate: operation.plannedFinish ?? operation.dueDate, predecessors: operation.predecessors.map(link => link.predecessor),
       actualStart, actualFinish, workSeconds: elapsedSeconds(operation.timeEntries, now), downtimeSeconds: downtimeSeconds(operation.statusHistory, now), serverNow: now.toISOString(),
       history: operation.statusHistory.map(event => ({ id: event.id, status: event.toStatus, reason: event.reason, at: event.changedAt, actor: `${event.changedBy.lastName} ${event.changedBy.firstName}` })) };

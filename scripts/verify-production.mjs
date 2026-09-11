@@ -119,7 +119,7 @@ try {
   const centerSummary=await request(`/operations/summary?workCenterId=${centerA.id}`,cookie);
   check(workerSummary.status===200 && workerSummary.data.counts.QUEUED===3 && workerSummary.data.completedToday===0 && centerSummary.data.counts.QUEUED===3,"Operation summaries respect access and selected work center");
   const firstOperationCard = await request(`/operations/${tasks[0].id}`, cookie);
-  check(firstOperationCard.status === 200 && firstOperationCard.data.itemId === item.id && firstOperationCard.data.route.steps.length === 4, "Operation cards include their order item and route stages");
+  check(firstOperationCard.status === 200 && firstOperationCard.data.itemId === item.id && firstOperationCard.data.route.steps.length === 4 && firstOperationCard.data.routeOperations.filter(stage=>stage.predecessorIds.length===0).length===1, "Operation cards include their order item and route stages");
   const first = tasks.find(task => task.title === "Первый этап"), branchA = tasks.find(task => task.title === "Ветка А"), branchB = tasks.find(task => task.title === "Ветка Б"), last = tasks.find(task => task.title === "Завершающий этап");
   const plan = { normHours:8, riskHours:2, priority: "HIGH", queueOrder: -10, plannedStart: "2026-09-09T08:00:00Z", plannedFinish: "2026-09-10T16:00:00Z", planVersion: 0 };
   check((await request(`/operations/${first.id}/plan`, workerCookie, plan, "PATCH")).status === 403, "Employee cannot change task schedule");
