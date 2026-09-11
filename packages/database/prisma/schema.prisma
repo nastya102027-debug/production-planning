@@ -65,6 +65,7 @@ model User {
   notifications NotificationRecipient[]
   responsibleProcurements Procurement[]
   assignedOperations Operation[]
+  routeTemplates RouteTemplate[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -78,6 +79,7 @@ model WorkCenter {
   active Boolean @default(true)
   users UserWorkCenter[]
   routeSteps RouteStep[]
+  routeTemplateSteps RouteTemplateStep[]
   operations Operation[]
   createdAt DateTime @default(now())
 }
@@ -184,10 +186,57 @@ model Route {
   name String
   version Int @default(1)
   active Boolean @default(true)
+  sourceTemplateId String?
   orderItem OrderItem @relation(fields:[orderItemId], references:[id], onDelete:Cascade)
+  sourceTemplate RouteTemplate? @relation(fields:[sourceTemplateId], references:[id], onDelete:SetNull)
   steps RouteStep[]
   launchItems ProductionLaunchItem[]
   @@index([orderItemId, active])
+  @@index([sourceTemplateId])
+}
+
+model RouteTemplate {
+  id String @id @default(uuid())
+  name String
+  description String?
+  category String?
+  archivedAt DateTime?
+  authorId String
+  author User @relation(fields:[authorId], references:[id])
+  steps RouteTemplateStep[]
+  appliedRoutes Route[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([archivedAt, category])
+  @@index([authorId, updatedAt])
+}
+
+model RouteTemplateStep {
+  id String @id @default(uuid())
+  templateId String
+  workCenterId String
+  title String
+  position Int
+  canvasX Float?
+  canvasY Float?
+  material String?
+  quantity Float?
+  unit String?
+  comment String?
+  components Json @default("[]")
+  template RouteTemplate @relation(fields:[templateId], references:[id], onDelete:Cascade)
+  workCenter WorkCenter @relation(fields:[workCenterId], references:[id])
+  predecessors RouteTemplateStepDependency[] @relation("templateSuccessor")
+  successors RouteTemplateStepDependency[] @relation("templatePredecessor")
+  @@unique([templateId, position])
+}
+
+model RouteTemplateStepDependency {
+  predecessorId String
+  successorId String
+  predecessor RouteTemplateStep @relation("templatePredecessor", fields:[predecessorId], references:[id], onDelete:Cascade)
+  successor RouteTemplateStep @relation("templateSuccessor", fields:[successorId], references:[id], onDelete:Cascade)
+  @@id([predecessorId, successorId])
 }
 
 model RouteStep {
