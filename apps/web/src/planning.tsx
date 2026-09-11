@@ -27,7 +27,7 @@ const subtractWorkingDays=(value?:string)=>{if(!value)return "";const date=new D
 const statusLabel:Record<string,string>={DRAFT:"Черновик",PROCUREMENT:"В закупке",READY_FOR_LAUNCH:"Готов к запуску",IN_PRODUCTION:"В производстве",PARTIALLY_READY:"Частично готов",COMPLETED:"Завершён",QUEUED:"К запуску",IN_PROGRESS:"В работе",PAUSED:"Остановлено",CANCELLED:"Отменено"};
 const defaultOperationLabels:Record<string,string>={QUEUED:"К запуску",IN_PROGRESS:"В работе",PAUSED:"Остановлено",COMPLETED:"Готово",CANCELLED:"Отменено"};
 const priorityLabel:Record<string,string>={LOW:"Низкий",NORMAL:"Обычный",HIGH:"Высокий",CRITICAL:"Критический"};
-const workCenterAccent:Record<string,string>={"Лазер":"center-card--laser","Гибка":"center-card--bending","Малярка Порошок":"center-card--powder","Нитрид":"center-card--nitride"};
+const workCenterAccent:Record<string,string>={"Лазер":"center-card--laser","Гибка":"center-card--bending","Малярка Порошок":"center-card--powder","Нитрид":"center-card--nitride","Гильотина":"center-card--cutting","Пила":"center-card--saw","Шлиф станок":"center-card--grinding","Шлифовка ручная":"center-card--grinding","Сварка":"center-card--welding","Слесарка":"center-card--metalwork","Фрезер ЧПУ":"center-card--milling","Токарка ЧПУ":"center-card--milling","Фрезер ручной":"center-card--milling","Малярка":"center-card--painting","Патина":"center-card--patina","ОТК":"center-card--quality"};
 
 export function PlanningScreen({onOpenCenter,onOpenTemplates}:{onOpenCenter:(id:string)=>void;onOpenTemplates:()=>void}){
   const revision=useProductionEvents();

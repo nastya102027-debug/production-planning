@@ -4,6 +4,7 @@ import { AlertTriangle, Boxes, ClipboardList, Factory, LogOut, PackageCheck, Plu
 import "./styles.css";
 import "./interaction.css";
 import "./latuning-theme.css";
+import "./responsive-design.css";
 import "./orders.css";
 import "./procurement.css";
 import { StaffScreen } from "./staff";

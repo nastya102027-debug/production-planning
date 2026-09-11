@@ -1,0 +1,26 @@
+/* Readable, consistent visual scale across the application. */
+:root{--ui-text:14px;--ui-small:12px;--ui-title:#172833;--ui-muted:#5e7180}
+body{font-size:var(--ui-text);line-height:1.45}
+button,input,select,textarea{font-size:14px}
+.content{padding:30px 34px}
+.kicker{font-size:11px!important;letter-spacing:.14em!important}
+.shell>main>header h1{font-size:27px;letter-spacing:-.02em}
+.shell>main>header p{font-size:11px}
+.page-actions h2,.planning-heading h2{font-size:25px;color:var(--ui-title)}
+.page-actions p,.template-library .page-actions p{font-size:14px;line-height:1.55}
+.metric span,.center-card span,.center-card small,.planning-orders small,.position-card-title small{font-size:var(--ui-small)}
+.metric strong{font-size:28px}.metric{min-height:96px;border-radius:8px}
+.planning-kpis article{min-height:96px;border-radius:8px}
+.launch-editor h3{font-size:25px}.launch-editor small,.launch-editor header span{font-size:13px}
+.launch-items article{border-radius:8px}.launch-items article>label,.route-choice>span{font-size:13px}
+.planning-orders>header{font-size:14px}.planning-orders>div>button:not(.secondary){border-radius:8px}
+.work-center-grid{gap:14px}.center-card{min-height:130px;border-radius:9px;padding:18px}
+.center-card b{font-size:15px;font-weight:800}.center-card strong{font-size:27px}.center-card span,.center-card small{font-size:12px;line-height:1.5}
+.center-card--laser{border-top-color:#db673e;background:#fff5f0}.center-card--bending{border-top-color:#527cc5;background:#f2f6ff}.center-card--powder{border-top-color:#9662ad;background:#fbf4ff}.center-card--nitride{border-top-color:#24877d;background:#effbf8}
+.center-card--cutting{border-top-color:#cc7a36;background:#fff8ee}.center-card--saw{border-top-color:#9b704f;background:#fff8f2}.center-card--grinding{border-top-color:#43889a;background:#eff9fb}.center-card--welding{border-top-color:#bd5953;background:#fff4f3}.center-card--metalwork{border-top-color:#5b8a65;background:#f1f9f2}.center-card--milling{border-top-color:#5d74bf;background:#f2f4ff}.center-card--painting{border-top-color:#bc5f79;background:#fff4f7}.center-card--patina{border-top-color:#8b6d9f;background:#f8f4fb}.center-card--quality{border-top-color:#596a83;background:#f1f4f8}
+.center-card--laser b{color:#a84628}.center-card--bending b{color:#315eaa}.center-card--powder b{color:#75478a}.center-card--nitride b{color:#17665f}.center-card--cutting b{color:#96551e}.center-card--saw b{color:#765035}.center-card--grinding b{color:#256779}.center-card--welding b{color:#943b37}.center-card--metalwork b{color:#356a40}.center-card--milling b{color:#3d54a2}.center-card--painting b{color:#933c59}.center-card--patina b{color:#674777}.center-card--quality b{color:#3c4d66}
+.template-library .page-actions{align-items:flex-end}.template-library .page-actions>div:last-child{gap:10px}.template-library input,.template-library .page-actions select{min-height:42px;font-size:14px}.template-create{display:flex;align-items:center;gap:7px;min-height:42px;white-space:nowrap}.template-create svg{width:17px}
+.template-grid>article{border-radius:10px;padding:18px}.template-grid header b{font-size:16px}.template-grid header small,.template-grid time,.template-grid p,.template-grid li small{font-size:12px}.template-grid li{font-size:12px;border-radius:7px}.template-grid footer button{font-size:12px;padding:8px 10px}
+.position-card{border-radius:9px}.position-card-title b{font-size:16px}.position-card-title span,.position-stages button small,.position-stages button em,.position-location,.position-next{font-size:12px!important}.position-stages h4{font-size:11px}
+@media(max-width:1100px){.content{padding:24px}.page-actions h2,.planning-heading h2{font-size:23px}.template-library .page-actions{align-items:flex-start}.template-library .page-actions>div:last-child{flex-wrap:wrap}}
+@media(max-width:700px){body{font-size:14px}.content{padding:18px 14px}.shell>main>header h1{font-size:21px}.page-actions h2,.planning-heading h2{font-size:21px}.page-actions{gap:14px}.page-actions>div:last-child{width:100%;gap:8px}.template-library input,.template-library .page-actions select{min-width:0;flex:1 1 160px}.template-create{order:-1;flex:1 0 100%;justify-content:center}.metric,.planning-kpis article{min-height:82px}.metric strong{font-size:24px}.work-center-grid{grid-template-columns:1fr}.center-card{min-height:112px}.launch-items article{gap:10px}.route-choice-menu{position:fixed;left:12px;right:12px;width:auto;top:calc(100vh - min(460px,78vh));max-height:calc(78vh - 12px)}.route-choice-results{max-height:calc(78vh - 150px)}}
