@@ -41,18 +41,31 @@ function TaskCard({ task, onAction, onOpen, now, labels, canCancel = false }: { 
 
 type PositionGroup={id:string;tasks:Operation[]};
 const positionStatus=(tasks:Operation[])=>tasks.some(task=>task.status==="PAUSED")?"PAUSED":tasks.some(task=>task.status==="IN_PROGRESS")?"IN_PROGRESS":tasks.every(task=>task.status==="COMPLETED"||task.status==="CANCELLED")?"COMPLETED":"QUEUED";
+function routeOrder(tasks:Operation[]){
+  const byId=new Map(tasks.map(task=>[task.id,task]));
+  const pending=new Map(tasks.map(task=>[task.id,new Set(task.predecessors.map(step=>step.id).filter(id=>byId.has(id)))]));
+  const orderHint=(task:Operation)=>{const index=task.route.steps.findIndex(step=>step.title===task.title&&step.workCenter===task.workCenter.name);return index<0?Number.MAX_SAFE_INTEGER:index;};
+  const compare=(left:Operation,right:Operation)=>orderHint(left)-orderHint(right)||left.workCenter.name.localeCompare(right.workCenter.name,"ru")||left.id.localeCompare(right.id);
+  const ready=tasks.filter(task=>pending.get(task.id)?.size===0).sort(compare),ordered:Operation[]=[];
+  while(ready.length){
+    const task=ready.shift()!;ordered.push(task);
+    for(const candidate of tasks){const dependencies=pending.get(candidate.id);if(!dependencies?.delete(task.id)||dependencies.size)continue;ready.push(candidate);}
+    ready.sort(compare);
+  }
+  return ordered.length===tasks.length?ordered:[...ordered,...tasks.filter(task=>!ordered.includes(task)).sort(compare)];
+}
 function PositionCard({group,onOpen,labels,colors}:{group:PositionGroup;onOpen:(task:Operation)=>void;labels:Record<string,string>;colors:Record<string,string>}) {
-  const status=positionStatus(group.tasks), active=group.tasks.filter(task=>["IN_PROGRESS","PAUSED"].includes(task.status));
-  const current=active.length?active:group.tasks.filter(task=>task.status==="QUEUED");
+  const orderedTasks=routeOrder(group.tasks), status=positionStatus(orderedTasks), active=orderedTasks.filter(task=>["IN_PROGRESS","PAUSED"].includes(task.status));
+  const current=active.length?active:orderedTasks.filter(task=>task.status==="QUEUED");
   const completed=group.tasks.filter(task=>task.status==="COMPLETED").length;
-  const next=group.tasks.find(task=>task.status==="QUEUED");
+  const next=orderedTasks.find(task=>task.status==="QUEUED");
   const detail=(task:Operation)=>task.route.steps.find(step=>step.title===task.title&&step.workCenter===task.workCenter.name);
   return <article className={`position-card ${status.toLowerCase()}`} style={{borderTopColor:colors[status]}}>
     <button className="position-card-title" onClick={()=>onOpen(group.tasks[0])}><small>Заказ № {group.tasks[0].orderNumber} · запуск № {group.tasks[0].launchNumber}</small><b>{group.tasks[0].itemName}</b><span>{group.tasks[0].quantity} шт. · {completed} из {group.tasks.length} операций завершено</span></button>
     <div className="position-progress"><i style={{width:`${group.tasks.length?completed/group.tasks.length*100:0}%`}}/></div>
     <section className="position-stages"><h4>{active.length?"Выполняется сейчас":"Следующие операции"}</h4>{current.map(task=>{const stage=detail(task);return <button key={task.id} onClick={()=>onOpen(task)}><span><b>{task.workCenter.name}</b><small>{task.title} · {labels[task.status]||task.status}</small>{stage?.material&&<em>{stage.material.split("\n").filter(Boolean).join(" · ")}{stage.quantity?` · ${stage.quantity} ${stage.unit||"шт."}`:""}</em>}</span><i className={`stage-status ${task.status.toLowerCase()}`} style={{backgroundColor:colors[task.status],color:"#fff"}}>{labels[task.status]||task.status}</i></button>;})}</section>
     {next&&active.length>0&&<p className="position-next">Следующий этап: <b>{next.workCenter.name}</b></p>}
-    <div className="position-route" aria-label="Маршрут позиции">{group.tasks.map(task=><span className={task.status.toLowerCase()} key={task.id}>{task.workCenter.name}</span>)}</div>
+    <div className="position-route" aria-label="Маршрут позиции">{orderedTasks.map(task=><span className={task.status.toLowerCase()} key={task.id}>{task.workCenter.name}</span>)}</div>
   </article>;
 }
 
