@@ -11,6 +11,7 @@ type Operation = { normHours?:number|null; riskHours?:number|null; assignee?:Ass
 const defaultLabels: Record<string, string> = { QUEUED: "К запуску", IN_PROGRESS: "В работе", PAUSED: "Остановлено", COMPLETED: "Готово", CANCELLED: "Отменено" };
 const defaultColors: Record<string,string> = { QUEUED:"#7195b3", IN_PROGRESS:"#3f8062", PAUSED:"#bc7939", COMPLETED:"#596a60", CANCELLED:"#9b5a5a" };
 const priorities: Record<string, string> = { LOW: "Низкий", NORMAL: "Обычный", HIGH: "Высокий", CRITICAL: "Критический" };
+const workCenterTone:Record<string,string>={"Лазер":"laser","Гибка":"bending","Малярка Порошок":"powder","Нитрид":"nitride","Гильотина":"cutting","Пила":"saw","Шлиф станок":"grinding","Шлифовка ручная":"grinding","Сварка":"welding","Слесарка":"metalwork","Фрезер ЧПУ":"milling","Токарка ЧПУ":"milling","Фрезер ручной":"milling","Малярка":"painting","Патина":"patina","ОТК":"quality"};
 const date = (value?: string) => value ? new Date(value).toLocaleDateString("ru-RU") : "—";
 const dateTime = (value?: string) => value ? new Date(value).toLocaleString("ru-RU",{dateStyle:"short",timeStyle:"short"}) : "—";
 const duration = (seconds: number) => `${Math.floor(seconds / 3600)} ч ${Math.floor(seconds % 3600 / 60)} мин ${Math.floor(seconds % 60)} с`;
@@ -18,7 +19,7 @@ const duration = (seconds: number) => `${Math.floor(seconds / 3600)} ч ${Math.f
 function TaskCard({ task, onAction, onOpen, now, labels, canCancel = false }: { task: Operation; onAction: (task: Operation, action: string) => void; onOpen: () => void; now: number; labels:Record<string,string>; canCancel?: boolean }) {
   const blocked = task.predecessors.some(step => step.status !== "COMPLETED");
   const delta = Math.max(0, (now - new Date(task.serverNow).getTime()) / 1000);
-  return <article className={`kanban-task ${task.status.toLowerCase()}`}>
+  return <article className={`kanban-task ${task.status.toLowerCase()} work-center--${workCenterTone[task.workCenter.name]||"default"}`}>
     <button className="task-title" onClick={onOpen}><small>Заказ № {task.orderNumber} · {task.workCenter.name}</small><b>{task.itemName}</b><span>{task.title} · {task.quantity} шт.</span></button>
     <div className="task-meta"><span className={task.dueDate && new Date(task.dueDate).getTime() < now && task.status !== "COMPLETED" ? "late" : ""}>Срок: {date(task.dueDate)}</span><span>{priorities[task.priority]}</span></div>
     <dl className="task-dates"><div><dt>Плановое начало</dt><dd>{dateTime(task.plannedStart)}</dd></div><div><dt>Плановое завершение</dt><dd>{dateTime(task.dueDate)}</dd></div>{task.actualStart&&<div><dt>Фактическое начало</dt><dd>{dateTime(task.actualStart)}</dd></div>}{task.actualFinish&&<div><dt>Фактическое завершение</dt><dd>{dateTime(task.actualFinish)}</dd></div>}</dl>
@@ -66,7 +67,7 @@ function PositionCard({group,onOpen,labels,colors}:{group:PositionGroup;onOpen:(
   const uniqueCenters=(stages:{workCenter:string}[])=>[...new Set(stages.map(stage=>stage.workCenter))];
   const activeCenters=uniqueCenters(activeRouteStages),readyCenters=uniqueCenters(readyRouteStages);
   const detail=(task:Operation)=>task.route.steps.find(step=>step.title===task.title&&step.workCenter===task.workCenter.name);
-  return <article className={`position-card ${status.toLowerCase()}`} style={{borderTopColor:colors[status]}}>
+  return <article className={`position-card ${status.toLowerCase()} work-center--${workCenterTone[group.tasks[0]?.workCenter.name]||"default"}`} style={{borderTopColor:colors[status]}}>
     <button className="position-card-title" onClick={()=>onOpen(group.tasks[0])}><small>Заказ № {group.tasks[0].orderNumber} · запуск № {group.tasks[0].launchNumber}</small><b>{group.tasks[0].itemName}</b><span>{group.tasks[0].quantity} шт. · {completed} из {group.tasks.length} операций завершено</span></button>
     <div className="position-progress"><i style={{width:`${group.tasks.length?completed/group.tasks.length*100:0}%`}}/></div>
     {activeCenters.length>0&&<p className="position-location">Сейчас на участке{activeCenters.length>1?"ах":""}: <b>{activeCenters.join(", ")}</b></p>}

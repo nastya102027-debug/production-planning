@@ -4,7 +4,6 @@ import { AlertTriangle, Boxes, ClipboardList, Factory, LogOut, PackageCheck, Plu
 import "./styles.css";
 import "./interaction.css";
 import "./latuning-theme.css";
-import "./responsive-design.css";
 import "./orders.css";
 import "./procurement.css";
 import { StaffScreen } from "./staff";
@@ -16,6 +15,7 @@ import { OrderForecast } from "./order-forecast";
 import { Analytics } from "./analytics";
 import { IntegrationMapping } from "./integration-mapping";
 import { RouteTemplates } from "./route-templates";
+import "./responsive-design.css";
 
 type User = { firstName:string; lastName:string; role:"PLANNER"|"EMPLOYEE"; workCenters:{workCenter:{id:string;name:string}}[] };
 type Summary = { orders:number; inProcurement:number; operations:number; stopped:number };
