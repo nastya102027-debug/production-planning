@@ -6,7 +6,7 @@ import jwt from "jsonwebtoken";
 import argon2 from "argon2";
 import path from "node:path";
 import { rateLimit } from "express-rate-limit";
-import { PrismaClient, Prisma, UserRole } from "@prisma/client";
+import { PrismaClient, Prisma, UserRole, OperationStatus } from "@prisma/client";
 import { z } from "zod";
 import { addWorkingDays, isDateOnly, parseDateOnly } from "./working-days.js";
 
@@ -76,6 +76,10 @@ app.get("/api/stop-reasons",auth,async(_req,res)=>res.json(await prisma.stopReas
 app.get("/api/stop-reasons/manage",auth,planner,async(_req,res)=>res.json(await prisma.stopReasonCatalog.findMany({orderBy:{name:"asc"}})));
 app.post("/api/stop-reasons",auth,planner,async(req,res)=>{const name=z.object({name:z.string().trim().min(1).max(200)}).parse(req.body).name;try{const reason=await prisma.stopReasonCatalog.create({data:{name}});await prisma.auditLog.create({data:{actorId:req.session!.sub,action:"STOP_REASON_CREATED",entityType:"StopReasonCatalog",entityId:reason.id,after:{name}}});res.status(201).json(reason);}catch{res.status(409).json({message:"Такая причина уже есть"});}});
 app.patch("/api/stop-reasons/:id",auth,planner,async(req,res)=>{const id=z.string().uuid().parse(req.params.id),input=z.object({active:z.boolean()}).parse(req.body);const reason=await prisma.stopReasonCatalog.update({where:{id},data:input});await prisma.auditLog.create({data:{actorId:req.session!.sub,action:"STOP_REASON_UPDATED",entityType:"StopReasonCatalog",entityId:id,after:input}});res.json(reason);});
+const operationStatusCodes=["QUEUED","IN_PROGRESS","PAUSED","COMPLETED","CANCELLED"] as const;
+const operationStatusInput=z.object({name:z.string().trim().min(1).max(80),color:z.string().regex(/^#[0-9a-fA-F]{6}$/,"Цвет должен быть в формате #RRGGBB")});
+app.get("/api/operation-statuses",auth,async(_req,res)=>res.json(await prisma.operationStatusCatalog.findMany()));
+app.put("/api/operation-statuses/:code",auth,planner,async(req,res)=>{const code=z.enum(operationStatusCodes).parse(req.params.code) as OperationStatus,input=operationStatusInput.parse(req.body);const status=await prisma.operationStatusCatalog.update({where:{code},data:input});await prisma.auditLog.create({data:{actorId:req.session!.sub,action:"OPERATION_STATUS_UPDATED",entityType:"OperationStatusCatalog",entityId:code,before:{code},after:input}});res.json(status);});
 const mappingInput=z.object({targetField:z.enum(["productionOrderNumber","customerOrderNumber","organization","dueDate","itemName","quantity","unitPrice"]),sourceField:z.string().trim().min(1).max(200),active:z.boolean()});
 app.get("/api/integrations/1c/mapping",auth,planner,async(_req,res)=>res.json(await prisma.integrationFieldMapping.findMany({where:{source:"1C"},orderBy:{targetField:"asc"}})));
 app.put("/api/integrations/1c/mapping",auth,planner,async(req,res)=>{const rows=z.array(mappingInput).max(7).parse(req.body);const unique=new Set(rows.map(row=>row.targetField));if(unique.size!==rows.length)return res.status(400).json({message:"Поле заказа нельзя сопоставить дважды"});await prisma.$transaction(async tx=>{await tx.integrationFieldMapping.deleteMany({where:{source:"1C"}});if(rows.length)await tx.integrationFieldMapping.createMany({data:rows.map(row=>({...row,source:"1C"}))});await tx.auditLog.create({data:{actorId:req.session!.sub,action:"INTEGRATION_MAPPING_UPDATED",entityType:"Integration",after:{source:"1C",fields:rows.map(row=>row.targetField)}}});});res.json(await prisma.integrationFieldMapping.findMany({where:{source:"1C"},orderBy:{targetField:"asc"}}));});

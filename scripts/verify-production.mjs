@@ -48,6 +48,12 @@ try {
   const savedMapping=await request("/integrations/1c/mapping",cookie,mapping,"PUT");
   check(savedMapping.status===200 && savedMapping.data.length===2 && savedMapping.data.find(row=>row.targetField==="productionOrderNumber").active,"Planner saves 1C field mapping");
   check((await request("/integrations/1c/mapping",cookie,[...mapping,{targetField:"quantity",sourceField:"Повтор",active:true}],"PUT")).status===400,"Integration mapping rejects duplicate target fields");
+  const operationStatuses=await request("/operation-statuses",cookie);
+  check(operationStatuses.status===200 && operationStatuses.data.length===5 && operationStatuses.data.some(row=>row.code==="QUEUED"&&row.name==="К запуску"),"Operation status catalog provides default labels");
+  check((await request("/operation-statuses/QUEUED",workerCookie,{name:"Ожидает",color:"#123456"},"PUT")).status===403,"Employee cannot change operation statuses");
+  const savedStatus=await request("/operation-statuses/QUEUED",cookie,{name:"Ожидает",color:"#123456"},"PUT");
+  check(savedStatus.status===200 && savedStatus.data.name==="Ожидает" && savedStatus.data.color==="#123456" && (await request("/operation-statuses",cookie)).data.some(row=>row.code==="QUEUED"&&row.name==="Ожидает"),"Planner changes operation status label and color");
+  check((await request("/operation-statuses/INVALID",cookie,{name:"Ошибка",color:"#123456"},"PUT")).status===400 && (await request("/operation-statuses/QUEUED",cookie,{name:"Ошибка",color:"red"},"PUT")).status===400,"Operation status catalog validates code and color");
   const staffPassword = randomBytes(18).toString("hex");
   const staffBody = { login: "managed-worker", firstName: "Новый", lastName: "Сотрудник", active: true, password: staffPassword, workCenterIds: [centerB.id] };
   check((await request("/staff", workerCookie)).status === 403 && (await request("/staff", workerCookie, staffBody)).status === 403, "Employee cannot list or create accounts");
