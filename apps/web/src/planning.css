@@ -132,6 +132,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .task-time.paused { color: #b4563b; margin-top: 6px; }
 .task-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
 .task-actions button { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #3f6449; background: #f1f6ee; border: 1px solid #dde6d8; padding: 7px; border-radius: 4px; }
+.task-actions button.danger { color: #a34135; background: #fff4f2; border-color: #efc8c2; }
 .column-empty { color: #84927f; text-align: center; font-size: 12px; padding: 35px 0; }
 .pagination { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 18px; font-size: 11px; }
 .task-history { padding-left: 20px; }

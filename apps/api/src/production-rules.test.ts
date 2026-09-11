@@ -8,6 +8,8 @@ describe("production workflow", () => {
     expect(nextStatus("IN_PROGRESS", "pause", false, "Нет материала")).toBe("PAUSED");
     expect(nextStatus("PAUSED", "resume", false)).toBe("IN_PROGRESS");
     expect(nextStatus("IN_PROGRESS", "complete", false)).toBe("COMPLETED");
+    expect(() => nextStatus("QUEUED", "cancel", false, " ")).toThrow();
+    expect(nextStatus("PAUSED", "cancel", false, "РћС‚РјРµРЅР° РїРѕ РёР·РјРµРЅРµРЅРёСЋ Р·Р°РєР°Р·Р°")).toBe("CANCELLED");
     expect(() => nextStatus("COMPLETED", "start", false)).toThrow();
   });
   it("accepts a fork and join but rejects duplicate, future and self dependencies", () => {

@@ -129,7 +129,7 @@ export function productionRouter(prisma: PrismaClient) {
       history: operation.statusHistory.map(event => ({ id: event.id, status: event.toStatus, reason: event.reason, at: event.changedAt, actor: `${event.changedBy.lastName} ${event.changedBy.firstName}` })) };
   }
   router.get("/operations", async (req, res) => {
-    const query = z.object({ workCenterId: z.string().uuid().optional(), assigneeId: z.string().uuid().optional(), unassigned: z.enum(["true"]).optional(), priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]).optional(), deadline: z.enum(["TODAY", "OVERDUE"]).optional(), status: z.enum(["QUEUED", "IN_PROGRESS", "PAUSED", "COMPLETED"]).optional(), search: z.string().trim().max(100).default(""), page: z.coerce.number().int().min(1).default(1) }).parse(req.query);
+    const query = z.object({ workCenterId: z.string().uuid().optional(), assigneeId: z.string().uuid().optional(), unassigned: z.enum(["true"]).optional(), priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]).optional(), deadline: z.enum(["TODAY", "OVERDUE"]).optional(), status: z.enum(["QUEUED", "IN_PROGRESS", "PAUSED", "COMPLETED", "CANCELLED"]).optional(), search: z.string().trim().max(100).default(""), page: z.coerce.number().int().min(1).default(1) }).parse(req.query);
     const dayStart=new Date();dayStart.setUTCHours(0,0,0,0);const dayEnd=new Date(dayStart);dayEnd.setUTCDate(dayEnd.getUTCDate()+1);
     const deadlineWhere:Prisma.OperationWhereInput=query.deadline==="TODAY"?{OR:[{plannedFinish:{gte:dayStart,lt:dayEnd}},{plannedFinish:null,dueDate:{gte:dayStart,lt:dayEnd}}]}:query.deadline==="OVERDUE"?{OR:[{plannedFinish:{lt:dayStart}},{plannedFinish:null,dueDate:{lt:dayStart}}]}:{};
     const searchWhere:Prisma.OperationWhereInput[]=query.search?[{OR:[{launchItem:{orderItem:{name:{contains:query.search,mode:"insensitive"}}}},{launchItem:{orderItem:{order:{productionOrderNumber:{contains:query.search,mode:"insensitive"}}}}},{launchItem:{launch:{number:{contains:query.search,mode:"insensitive"}}}}]}]:[];
@@ -277,7 +277,7 @@ export function productionRouter(prisma: PrismaClient) {
     res.json(centers.map(center => ({ ...center, counts: Object.fromEntries(counts.filter(row => row.workCenterId === center.id).map(row => [row.status, row._count])) })));
   });
   router.post("/operations/:id/actions", async (req, res) => {
-    const input = z.object({ action: z.enum(["start", "pause", "resume", "complete", "comment", "problem"]), reason: z.string().trim().max(1000).optional(), comment: z.string().trim().max(2000).optional() }).parse(req.body);
+    const input = z.object({ action: z.enum(["start", "pause", "resume", "complete", "cancel", "comment", "problem"]), reason: z.string().trim().max(1000).optional(), comment: z.string().trim().max(2000).optional() }).parse(req.body);
     const operationId = String(req.params.id), userId = req.session!.sub;
     const operation = await prisma.$transaction(async tx => {
       const initial = await tx.operation.findUnique({ where: { id: operationId }, select: { launchItem: { select: { orderItem: { select: { orderId: true } } } } } });
@@ -286,6 +286,7 @@ export function productionRouter(prisma: PrismaClient) {
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${initial.launchItem.orderItem.orderId} FOR UPDATE`;
       const current = await tx.operation.findFirst({ where: { id: operationId, ...(req.session!.role === "PLANNER" ? {} : { workCenter: { users: { some: { userId } } } }) }, include: operationInclude });
       if (!current) throw new ProductionError(404, "Задача не найдена");
+      if (input.action === "cancel" && req.session!.role !== "PLANNER") throw new ProductionError(403, "Отменять операции может только Планер");
       const now = new Date();
       const note = [input.reason, input.comment].filter(Boolean).join("\n");
       if (["comment", "problem"].includes(input.action)) {
