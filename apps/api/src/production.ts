@@ -24,7 +24,7 @@ const templateInclude = { author: { select: { id: true, firstName: true, lastNam
 const launchInclude = { order: true, items: { include: { orderItem: true, route: { include: routeInclude }, operations: { include: { workCenter: true, predecessors: { include: { predecessor: { select: { id: true, status: true } } } } } } } } };
 const operationInclude = {
   assignee: { select: { id: true, firstName: true, lastName: true, active: true } },
-  workCenter: true, predecessors: { include: { predecessor: { select: { id: true, status: true, title: true } } } },
+  workCenter: true, predecessors: { include: { predecessor: { select: { id: true, status: true, title: true, workCenter: { select: { name: true } } } } } },
   launchItem: { include: { launch: { select: { number: true, plannedStart: true } }, route: { include: routeInclude }, orderItem: { select: { id: true, name: true, quantity: true, comment: true, order: { select: { id: true, productionOrderNumber: true } } } } } },
   timeEntries: true, statusHistory: { orderBy: { changedAt: "asc" as const }, include: { changedBy: { select: { firstName: true, lastName: true } } } }
 };

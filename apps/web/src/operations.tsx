@@ -6,7 +6,7 @@ import "./planning.css";
 
 type Assignee = { id:string; firstName:string; lastName:string; active?:boolean };
 type Operation = { normHours?:number|null; riskHours?:number|null; assignee?:Assignee|null; id: string; title: string; quantity: number; status: string; priority: string; dueDate?: string; plannedStart?: string; stagePlannedStart?:string; plannedFinish?:string; actualStart?:string;actualFinish?:string;queueOrder:number; planVersion:number; comment?: string; stopReason?: string;
-  workCenter: { id: string; name: string }; orderNumber: string; itemId:string; itemQuantity:number; itemName: string; launchNumber: string; route:{id:string;name:string;steps:{id:string;title:string;workCenter:string;material?:string|null;quantity?:number|null;unit?:string|null;components:{name:string;material:string;quantity:number;unit:string}[]}[]}; predecessors: { id: string; title: string; status: string }[];
+  workCenter: { id: string; name: string }; orderNumber: string; itemId:string; itemQuantity:number; itemName: string; launchNumber: string; route:{id:string;name:string;steps:{id:string;title:string;workCenter:string;material?:string|null;quantity?:number|null;unit?:string|null;components:{name:string;material:string;quantity:number;unit:string}[]}[]}; predecessors: { id: string; title: string; status: string; workCenter:{name:string} }[];
   workSeconds: number; downtimeSeconds: number; serverNow: string; history: { id: string; at: string; actor: string; status: string; reason?: string }[] };
 const defaultLabels: Record<string, string> = { QUEUED: "К запуску", IN_PROGRESS: "В работе", PAUSED: "Остановлено", COMPLETED: "Готово", CANCELLED: "Отменено" };
 const defaultColors: Record<string,string> = { QUEUED:"#7195b3", IN_PROGRESS:"#3f8062", PAUSED:"#bc7939", COMPLETED:"#596a60", CANCELLED:"#9b5a5a" };
@@ -59,10 +59,12 @@ function PositionCard({group,onOpen,labels,colors}:{group:PositionGroup;onOpen:(
   const current=active.length?active:orderedTasks.filter(task=>task.status==="QUEUED");
   const completed=group.tasks.filter(task=>task.status==="COMPLETED").length;
   const next=orderedTasks.find(task=>task.status==="QUEUED");
+  const blockedBy=[...new Map(current.flatMap(task=>task.predecessors.filter(step=>step.status!=="COMPLETED").map(step=>[step.id,step]))).values()];
   const detail=(task:Operation)=>task.route.steps.find(step=>step.title===task.title&&step.workCenter===task.workCenter.name);
   return <article className={`position-card ${status.toLowerCase()}`} style={{borderTopColor:colors[status]}}>
     <button className="position-card-title" onClick={()=>onOpen(group.tasks[0])}><small>Заказ № {group.tasks[0].orderNumber} · запуск № {group.tasks[0].launchNumber}</small><b>{group.tasks[0].itemName}</b><span>{group.tasks[0].quantity} шт. · {completed} из {group.tasks.length} операций завершено</span></button>
     <div className="position-progress"><i style={{width:`${group.tasks.length?completed/group.tasks.length*100:0}%`}}/></div>
+    {blockedBy.length>0&&<p className="position-location">Сейчас на участке: <b>{blockedBy.map(step=>step.workCenter.name).join(", ")}</b></p>}
     <section className="position-stages"><h4>{active.length?"Выполняется сейчас":"Следующие операции"}</h4>{current.map(task=>{const stage=detail(task);return <button key={task.id} onClick={()=>onOpen(task)}><span><b>{task.workCenter.name}</b><small>{task.title} · {labels[task.status]||task.status}</small>{stage?.material&&<em>{stage.material.split("\n").filter(Boolean).join(" · ")}{stage.quantity?` · ${stage.quantity} ${stage.unit||"шт."}`:""}</em>}</span><i className={`stage-status ${task.status.toLowerCase()}`} style={{backgroundColor:colors[task.status],color:"#fff"}}>{labels[task.status]||task.status}</i></button>;})}</section>
     {next&&active.length>0&&<p className="position-next">Следующий этап: <b>{next.workCenter.name}</b></p>}
     <div className="position-route" aria-label="Маршрут позиции">{orderedTasks.map(task=><span className={task.status.toLowerCase()} key={task.id}>{task.workCenter.name}</span>)}</div>
