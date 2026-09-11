@@ -104,6 +104,8 @@ try {
   const route = await request(`/order-items/${item.id}/routes`, cookie, routeBody);
   check(route.status === 201, "Parallel route with repeated work center is saved");
   check((await request(`/order-items/${item.id}/routes`, cookie, { ...routeBody, steps: [{ ...routeBody.steps[0], predecessorIndexes: [0] }] })).status === 400, "Self-dependent route is rejected");
+  const disposableRoute=await request(`/order-items/${item.id}/routes`,cookie,{...routeBody,name:"Disposable route"});
+  check(disposableRoute.status===201 && (await request(`/order-items/${item.id}/routes/${disposableRoute.data.id}`,cookie,undefined,"DELETE")).status===204,"Planner deletes an unused saved route");
   const body = { number: "TEST-L1", orderId: order.id, items: [{ orderItemId: item.id, routeId: route.data.id, quantity: 4 }] };
   check((await request("/launches", workerCookie, body)).status === 403, "Employee cannot create launch");
   check((await request("/launches", cookie, { ...body, items: [...body.items, ...body.items] })).status === 400, "Duplicate launch positions rejected");

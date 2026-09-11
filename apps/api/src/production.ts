@@ -48,7 +48,7 @@ export function productionRouter(prisma: PrismaClient) {
   function templateInput(body:unknown){const raw=z.object({name:z.string(),nodes:z.array(z.unknown()),edges:z.array(z.unknown())}).passthrough().parse(body);return {...parseGraph({name:raw.name,nodes:raw.nodes,edges:raw.edges}),...templateMeta.parse(raw)};}
   async function saveTemplateSteps(tx:Prisma.TransactionClient,templateId:string,steps:ReturnType<typeof parseGraph>["steps"]){
     const saved:string[]=[];
-    for(const [index,step] of steps.entries()){const row=await tx.routeTemplateStep.create({data:{templateId,workCenterId:step.workCenterId,title:step.title,position:index+1,canvasX:step.canvasX,canvasY:step.canvasY,material:step.material,quantity:step.quantity,unit:step.unit,comment:step.comment,components:step.components}});saved.push(row.id);}
+    for(const [index,step] of steps.entries()){const row=await tx.routeTemplateStep.create({data:{templateId,workCenterId:step.workCenterId,title:step.title,position:index+1,canvasX:step.canvasX,canvasY:step.canvasY,material:step.material,quantity:null,unit:step.unit,comment:step.comment,components:step.components}});saved.push(row.id);}
     for(const [index,step] of steps.entries())for(const predecessor of step.predecessorIndexes)await tx.routeTemplateStepDependency.create({data:{predecessorId:saved[predecessor],successorId:saved[index]}});
   }
 
@@ -73,6 +73,19 @@ export function productionRouter(prisma: PrismaClient) {
       return tx.route.findUniqueOrThrow({ where: { id: created.id }, include: routeInclude });
     });
     res.status(201).json(route);
+  });
+  router.delete("/order-items/:itemId/routes/:routeId",plannerOnly,async(req,res)=>{
+    const {itemId,routeId}=z.object({itemId:z.string().uuid(),routeId:z.string().uuid()}).parse(req.params);
+    const route=await prisma.route.findFirst({where:{id:routeId,orderItemId:itemId,active:true},include:{_count:{select:{launchItems:true}}}});
+    if(!route)throw new ProductionError(404,"Маршрут не найден");
+    if(route._count.launchItems){
+      await prisma.route.update({where:{id:routeId},data:{active:false}});
+      await prisma.auditLog.create({data:{actorId:req.session!.sub,action:"ROUTE_DEACTIVATED",entityType:"Route",entityId:routeId}});
+      return res.json({archived:true});
+    }
+    await prisma.route.delete({where:{id:routeId}});
+    await prisma.auditLog.create({data:{actorId:req.session!.sub,action:"ROUTE_DELETED",entityType:"Route",entityId:routeId}});
+    res.status(204).end();
   });
   router.get("/route-templates",plannerOnly,async(req,res)=>{const query=z.object({search:z.string().trim().max(100).default(""),archived:z.enum(["true"]).optional()}).parse(req.query);res.json(await prisma.routeTemplate.findMany({where:{archivedAt:query.archived?{not:null}:null,...(query.search?{OR:[{name:{contains:query.search,mode:"insensitive"}},{description:{contains:query.search,mode:"insensitive"}},{category:{contains:query.search,mode:"insensitive"}}]}:{})},include:templateInclude,orderBy:{updatedAt:"desc"}}));});
   router.post("/route-templates",plannerOnly,async(req,res)=>{const input=templateInput(req.body);const template=await prisma.$transaction(async tx=>{const ids=[...new Set(input.steps.map(step=>step.workCenterId))];if(await tx.workCenter.count({where:{id:{in:ids},active:true}})!==ids.length)throw new ProductionError(400,"Участок не найден или отключён");const created=await tx.routeTemplate.create({data:{name:input.name,description:input.description||null,category:input.category||null,authorId:req.session!.sub}});await saveTemplateSteps(tx,created.id,input.steps);await tx.auditLog.create({data:{actorId:req.session!.sub,action:"ROUTE_TEMPLATE_CREATED",entityType:"RouteTemplate",entityId:created.id,after:{name:input.name,steps:input.steps.length}}});return tx.routeTemplate.findUniqueOrThrow({where:{id:created.id},include:templateInclude});});res.status(201).json(template);});
