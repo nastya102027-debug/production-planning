@@ -32,6 +32,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .launch-dates { display: flex; gap: 14px; padding: 16px 0; border-top: 1px solid #e6ebe5; }
 .launch-items-title { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; padding: 15px 0; }
 .launch-items-title span { font-size: 11px; color: #718076; }
+.launch-items>.route-search { display: grid; grid-template-columns: auto minmax(170px,250px); align-items: center; gap: 7px; width: min(100%,360px); margin: -5px 0 12px auto; font-size: 11px; color: #5d6d63; }
+.launch-items>.route-search input { min-width: 0; }
 .launch-items article { display: grid; grid-template-columns: 22px minmax(135px,1.1fr) minmax(135px,1fr) 85px minmax(125px,1fr) auto auto; align-items: center; gap: 12px; padding: 16px 10px; border: 1px solid #e3e8e2; border-radius: 5px; margin-bottom: 10px; }
 .launch-items article.selected { background: #f7faf6; border-color: #8eaa95; }
 .launch-items article.disabled { opacity: .6; }
