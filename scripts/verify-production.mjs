@@ -91,6 +91,7 @@ try {
   const template=await request("/route-templates",cookie,templateBody);
   check(template.status===201 && template.data.steps.length===3 && template.data.steps.find(step=>step.title==="Сварка").predecessors.length===2,"Planner saves graph route template with parallel branches");
   check((await request("/route-templates",cookie)).data.some(row=>row.id===template.data.id&&row.category==="Зеркала"),"Route template library lists saved templates");
+  check((await request("/route-templates?archived=false",cookie)).data.some(row=>row.id===template.data.id),"Route template library accepts the active archive filter");
   const appliedTemplate=await request(`/order-items/${item.id}/route-templates/${template.data.id}/apply`,cookie,{});
   check(appliedTemplate.status===201 && appliedTemplate.data.steps.length===3 && appliedTemplate.data.steps.find(step=>step.title==="Пила").material==="Латунь 5 мм","Applying a template creates an independent position route copy");
   check((await request(`/order-items/${item.id}/route-templates/${template.data.id}/apply`,workerCookie,{})).status===403,"Employee cannot apply route templates");
