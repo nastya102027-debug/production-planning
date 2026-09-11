@@ -1,0 +1,89 @@
+/* Mobile-first working surface for shop-floor employees; desktop planner layout remains unchanged. */
+.mobile-menu,.mobile-logout,.mobile-nav-backdrop,.mobile-task-tabs,.position-open{display:none}
+.mobile-title-row{display:flex;align-items:center;gap:12px;min-width:0}
+
+@media(max-width:700px){
+  html,body,#root{min-height:100%;background:#eff2f3}
+  body{overflow-x:hidden;-webkit-tap-highlight-color:transparent}
+  button,input,select,textarea{font-size:16px}
+  button{touch-action:manipulation}
+  .shell{display:block;min-height:100dvh}
+  .shell>main>header{position:sticky;z-index:30;top:0;min-height:72px;padding:10px 12px;background:#f8faf9;box-shadow:0 2px 12px #10182016}
+  .shell>main>header h1{max-width:64vw;font-size:18px;line-height:1.18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .shell>main>header p{font-size:9px}
+  .mobile-title-row{gap:9px}
+  .mobile-menu,.mobile-logout{display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;padding:0;border:1px solid #d4dce0;border-radius:10px;background:#fff;color:#23313d}
+  .mobile-menu svg,.mobile-logout svg{width:21px;height:21px}
+  .header-tools{gap:7px}
+  .header-tools .avatar{width:36px;height:36px;background:#e5e9e6}
+  .header-tools>div,.header-tools>.global-search{display:none!important}
+  .notification-bell{width:42px;height:42px}
+  .content{padding:14px 12px 26px}
+
+  /* Planner navigation becomes a readable drawer instead of an icon strip. */
+  .planner-shell>aside{position:fixed;z-index:50;inset:0 auto 0 0;display:flex;width:min(310px,86vw);padding:18px 12px;background:linear-gradient(180deg,#101820,#19232d);transform:translateX(-105%);transition:transform .22s ease;box-shadow:18px 0 48px #0005}
+  .planner-shell.menu-open>aside{transform:translateX(0)}
+  .planner-shell>aside .logo{display:block;min-height:90px}
+  .planner-shell>aside .logo:before{height:72px}
+  .planner-shell>aside nav{display:grid;gap:4px;overflow-y:auto}
+  .planner-shell>aside nav button{justify-content:flex-start;width:100%;min-height:44px;padding:11px 13px;font-size:14px!important}
+  .planner-shell>aside nav button.active{box-shadow:inset 3px 0 var(--lt-brass)!important}
+  .planner-shell>aside .logout{display:flex;min-height:44px;margin-top:auto;font-size:14px}
+  .mobile-nav-backdrop{position:fixed;z-index:45;inset:0;display:none;border:0;background:#08101899}
+  .planner-shell.menu-open .mobile-nav-backdrop{display:block}
+
+  /* Employees need no navigation: their task list is the app home. */
+  .employee-shell>aside{display:none!important}
+  .employee-shell .header-tools .avatar{display:none}
+  .employee-shell>main>header h1{max-width:72vw}
+  .employee-shell .production-board{padding-top:12px}
+  .employee-shell .board-heading{align-items:flex-start}
+  .employee-shell .board-heading h2{margin:2px 0 0;font-size:22px;line-height:1.2}
+  .employee-shell .board-heading>span{margin-top:19px;padding:5px 9px;border-radius:999px;background:#fff;color:#596a64;font-size:12px;white-space:nowrap}
+  .employee-shell .operations-summary{position:relative;grid-template-columns:repeat(4,minmax(84px,1fr));gap:8px;margin:12px -12px 10px;padding:0 12px 4px;overflow-x:auto;scrollbar-width:none}
+  .employee-shell .operations-summary::-webkit-scrollbar,.mobile-task-tabs::-webkit-scrollbar{display:none}
+  .employee-shell .operations-summary span{min-width:88px;min-height:68px;padding:10px;border-radius:9px}
+  .employee-shell .operations-summary b{font-size:23px}
+  .mobile-task-tabs{position:sticky;z-index:20;top:72px;display:flex;gap:7px;margin:0 -12px 14px;padding:9px 12px;overflow-x:auto;background:#eff2f3eF;backdrop-filter:blur(8px);scrollbar-width:none}
+  .mobile-task-tabs button{flex:0 0 auto;min-height:38px;padding:8px 13px;border:1px solid #ccd6d1;border-radius:999px;background:#fff;color:#53645e;font-size:13px;font-weight:700}
+  .mobile-task-tabs button.selected{border-color:#a98649;background:#a98649;color:#fff;box-shadow:0 4px 12px #80662f25}
+  .employee-shell .kanban{display:grid;grid-template-columns:1fr;gap:12px;overflow:visible}
+  .employee-shell .kanban-column{min-height:0;padding:10px;border-radius:12px}
+  .employee-shell .kanban-column h3{margin:3px 2px 10px;font-size:14px}
+  .employee-shell .column-empty{margin:8px 2px 4px;padding:18px;border:1px dashed #cbd5d0;border-radius:9px;text-align:center;color:#708078}
+  .employee-shell .position-card{gap:12px;padding:15px;border-radius:12px;box-shadow:0 5px 16px #17222c12}
+  .employee-shell .position-card-title{min-height:58px}
+  .employee-shell .position-card-title small{font-size:12px!important;line-height:1.35}
+  .employee-shell .position-card-title b{font-size:18px;line-height:1.25}
+  .employee-shell .position-card-title span{font-size:13px!important}
+  .employee-shell .position-location,.employee-shell .position-next{padding:9px 10px;border-radius:8px;background:#ffffffb8;font-size:13px!important}
+  .employee-shell .position-stages button{min-height:58px;padding:10px;border-radius:9px}
+  .employee-shell .position-stages button b{font-size:15px}
+  .employee-shell .position-stages button small,.employee-shell .position-stages button em{font-size:12px!important}
+  .employee-shell .stage-status{padding:6px 8px;font-size:11px}
+  .employee-shell .position-route{gap:5px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}
+  .employee-shell .position-route span{flex:0 0 auto;padding:5px 7px;font-size:11px}
+  .position-open{display:block;width:100%;min-height:46px;border:1px solid #8c713f;border-radius:9px;background:#a98649;color:#fff;font-size:15px;font-weight:800}
+
+  /* Task details act like a native bottom sheet with thumb-friendly actions. */
+  .modal-backdrop{align-items:flex-end;padding:0;background:#0a121a99}
+  .task-dialog,.task-dialog[aria-label="Карточка задачи"]{width:100%;max-height:92dvh;margin:0;padding:18px 14px calc(18px + env(safe-area-inset-bottom));border-radius:18px 18px 0 0}
+  .task-dialog>header{position:sticky;z-index:2;top:-18px;margin:-18px -14px 8px;padding:14px;background:#fff;border-radius:18px 18px 0 0}
+  .task-dialog[aria-label="Карточка задачи"]>header{padding:14px}
+  .task-dialog>header h2,.task-dialog[aria-label="Карточка задачи"]>header h2{font-size:20px}
+  .task-dialog>header button{width:42px;height:42px;border-radius:10px!important;background:#f0f3f1!important}
+  .task-dialog[aria-label="Карточка задачи"]>.kanban-task{margin:12px 0;padding:14px}
+  .task-dialog[aria-label="Карточка задачи"] .task-actions{grid-template-columns:1fr 1fr}
+  .task-dialog[aria-label="Карточка задачи"] .task-actions button{min-height:50px;font-size:14px}
+  .task-dialog[aria-label="Карточка задачи"] .task-actions button:first-child{grid-column:1/-1}
+  .task-dialog input,.task-dialog select,.task-dialog textarea{min-height:48px;font-size:16px}
+  .task-dialog>footer{position:sticky;bottom:-18px;margin-inline:-14px;padding:12px 14px calc(12px + env(safe-area-inset-bottom));background:#fff;box-shadow:0 -5px 14px #15202b12}
+  .task-dialog>footer button{flex:1;min-height:48px}
+  .pagination button{min-height:44px;padding-inline:16px}
+}
+
+@media(max-width:380px){
+  .shell>main>header h1{max-width:58vw;font-size:17px}
+  .task-dialog[aria-label="Карточка задачи"] .task-actions{grid-template-columns:1fr}
+  .task-dialog[aria-label="Карточка задачи"] .task-actions button:first-child{grid-column:auto}
+}
