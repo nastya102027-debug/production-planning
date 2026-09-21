@@ -44,6 +44,7 @@
   .employee-shell .operations-summary::-webkit-scrollbar,.mobile-task-tabs::-webkit-scrollbar{display:none}
   .employee-shell .operations-summary span{min-width:88px;min-height:68px;padding:10px;border-radius:9px}
   .employee-shell .operations-summary b{font-size:23px}
+  .employee-shell .employee-order-search{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:0 11px;border:1px solid #c6d1cb;border-radius:10px;background:#fff;color:#718078}.employee-shell .employee-order-search input{width:100%;min-height:42px;padding:0;border:0;background:transparent;color:#28382f;font:inherit;font-size:14px}.employee-shell .employee-order-search input:focus{outline:0}
   .mobile-task-tabs{position:sticky;z-index:20;top:72px;display:flex;gap:7px;margin:0 -12px 14px;padding:9px 12px;overflow-x:auto;background:#eff2f3eF;backdrop-filter:blur(8px);scrollbar-width:none}
   .mobile-task-tabs button{flex:0 0 auto;min-height:38px;padding:8px 13px;border:1px solid #ccd6d1;border-radius:999px;background:#fff;color:#53645e;font-size:13px;font-weight:700}
   .mobile-task-tabs button.selected{border-color:#a98649;background:#a98649;color:#fff;box-shadow:0 4px 12px #80662f25}
