@@ -105,6 +105,41 @@ export function productionRouter(prisma: PrismaClient, hub: EventHub) {
     const page = z.coerce.number().int().min(1).default(1).parse(req.query.page);
     res.json(await prisma.productionLaunch.findMany({ include: launchInclude, orderBy: { createdAt: "desc" }, skip: (page - 1) * 30, take: 30 }));
   });
+  router.get("/planning/orders/:orderId/launches", plannerOnly, async (req, res) => {
+    const orderId = z.string().uuid().parse(req.params.orderId);
+    res.json(await prisma.productionLaunch.findMany({ where: { orderId, order: { archivedAt: null } }, include: launchInclude, orderBy: { createdAt: "desc" } }));
+  });
+  router.put("/launches/:launchId/items/:launchItemId/route", plannerOnly, async (req, res) => {
+    const { launchId, launchItemId } = z.object({ launchId: z.string().uuid(), launchItemId: z.string().uuid() }).parse(req.params);
+    const input = z.object({ routeId: z.string().uuid() }).strict().parse(req.body);
+    const changed = await prisma.$transaction(async tx => {
+      const current = await tx.productionLaunchItem.findFirst({ where: { id: launchItemId, launchId }, include: { launch: { include: { order: true } }, orderItem: true, operations: true } });
+      if (!current) throw new ProductionError(404, "Запуск или его позиция не найдены");
+      if (current.operations.some(operation => operation.status !== "QUEUED")) throw new ProductionError(409, "Маршрут уже нельзя изменить: по нему начались работы или есть завершённые этапы");
+      const route = await tx.route.findFirst({ where: { id: input.routeId, orderItemId: current.orderItemId, active: true }, include: routeInclude });
+      if (!route?.steps.length) throw new ProductionError(400, "Выберите действующий маршрут этой позиции");
+      const previousCenterIds = current.operations.map(operation => operation.workCenterId);
+      await tx.operation.deleteMany({ where: { launchItemId } });
+      await tx.productionLaunchItem.update({ where: { id: launchItemId }, data: { routeId: route.id } });
+      const savedPlan = remainingPlanInput.safeParse(current.orderItem.remainingPlan);
+      const operationByStep = new Map<string, string>();
+      for (const step of route.steps) {
+        const operation = await tx.operation.create({ data: {
+          launchItemId, workCenterId: step.workCenterId, title: step.title || step.workCenter.name, quantity: current.quantity,
+          priority: current.launch.priority, dueDate: current.launch.plannedFinish ?? current.launch.order.dueDate,
+          normHours: savedPlan.success && savedPlan.data.routeId === route.id ? (savedPlan.data.steps.find(row => row.stepId === step.id)?.hoursPerUnit ?? 0) * current.quantity || null : null,
+          hourlyRate: step.workCenter.hourlyRate,
+          statusHistory: { create: { changedById: req.session!.sub, toStatus: "QUEUED", reason: "Маршрут запуска исправлен планером" } }
+        } });
+        operationByStep.set(step.id, operation.id);
+      }
+      for (const step of route.steps) for (const dependency of step.predecessors) await tx.operationDependency.create({ data: { predecessorId: operationByStep.get(dependency.predecessorId)!, successorId: operationByStep.get(step.id)! } });
+      await tx.auditLog.create({ data: { actorId: req.session!.sub, action: "LAUNCH_ROUTE_CHANGED", entityType: "ProductionLaunchItem", entityId: launchItemId, before: { routeId: current.routeId }, after: { routeId: route.id } } });
+      return { launch: await tx.productionLaunch.findUniqueOrThrow({ where: { id: launchId }, include: launchInclude }), previousCenterIds };
+    });
+    publish([...changed.previousCenterIds, ...changed.launch.items.flatMap(item => item.operations.map(operation => operation.workCenterId))]);
+    res.json(changed.launch);
+  });
   router.post("/launches", plannerOnly, async (req, res) => {
     const input = launchInput.parse(req.body);
     if (new Set(input.items.map(item => item.orderItemId)).size !== input.items.length) throw new ProductionError(400, "Позиции запуска не должны повторяться");
