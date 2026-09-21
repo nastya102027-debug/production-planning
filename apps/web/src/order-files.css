@@ -1,16 +1,23 @@
 /* Чертежи и файлы заказа. Светлая палитра автора; тёмную пару добавляет glass/postcss-glass.mjs при сборке. */
 .order-files{display:grid;gap:8px;margin:2px 0 6px}
+.order-files-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .order-files h3{display:flex;align-items:center;gap:7px;margin:0;font-size:14px}
 .order-files h3 svg{width:17px;height:17px;color:#7a867f}
 .order-files h4{margin:6px 0 0;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#7a867f}
 .order-files-hint{margin:0;font-size:13px;line-height:1.45;color:#748079}
 .order-files-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
-.order-file{display:flex;align-items:center;gap:10px;min-width:0;min-height:52px;padding:9px 12px;border:1px solid #d9e0dc;border-radius:12px;background:#fff;color:#18211d!important;text-decoration:none}
+.order-file{display:flex;align-items:center;min-width:0;min-height:52px;border:1px solid #d9e0dc;border-radius:12px;background:#fff;color:#18211d!important}
+.order-file>a{display:flex;align-items:center;gap:10px;min-width:0;flex:1;padding:9px 12px;color:inherit!important;text-decoration:none}
 .order-file:hover{border-color:#d45b39}
 .order-file svg{flex:none;width:22px;height:22px;color:#7a867f}
 .order-file.calculator svg,.order-file.\31 c svg{color:#d45b39}
 .order-file span{display:grid;min-width:0}
 .order-file b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;font-weight:600}
 .order-file small{font-size:11.5px;color:#7a867f}
+.order-file.rkd{border-left:3px solid #c79d3b}
+.order-rkd-upload{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;padding:7px 10px;border:1px solid #c79d3b;border-radius:8px;background:#fffaf0;color:#765c1f;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.order-rkd-upload:hover:not(:disabled){background:#fff2d1}.order-rkd-upload:disabled{opacity:.65;cursor:wait}.order-rkd-upload svg{width:15px;height:15px}
+.order-rkd-note{display:flex;align-items:flex-start;gap:6px;margin:0;color:#7a867f;font-size:11.5px;line-height:1.35}.order-rkd-note svg{width:14px;height:14px;flex:none;margin-top:1px}
+.order-file-delete{display:grid;place-items:center;flex:none;width:32px;height:32px;margin-right:8px;border:0;border-radius:8px;background:transparent;color:#89928c;cursor:pointer}.order-file-delete:hover{background:#fff0ed;color:#b84d35}.order-file-delete svg{width:16px;height:16px}
 .order-files-dialog .order-files{margin-top:4px}
-@media(max-width:600px){.order-files-list{grid-template-columns:1fr}.order-file{min-height:56px}}
+@media(max-width:600px){.order-files-list{grid-template-columns:1fr}.order-file{min-height:56px}.order-files-heading{align-items:flex-start}.order-rkd-upload{font-size:11px;padding:7px 8px}}
