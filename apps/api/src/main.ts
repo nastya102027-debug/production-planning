@@ -125,7 +125,7 @@ const orderItemInput = z.object({
   name: z.string().trim().min(1).max(200),
   quantity: z.number().int().positive(),
   unitPrice: z.number().nonnegative(),
-  comment: z.string().trim().max(1000).optional()
+  comment: z.string().trim().max(1000).nullable().optional()
 });
 const createOrderInput = z.object({
   productionOrderNumber: z.string().trim().min(1).max(80),
