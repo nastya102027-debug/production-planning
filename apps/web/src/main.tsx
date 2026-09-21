@@ -140,13 +140,11 @@ function OrderForm({onClose,onCreated,existing}:{onClose:()=>void;onCreated:(ord
         <label>Заказ покупателя №<input value={customerOrderNumber} onChange={e=>setCustomerOrderNumber(e.target.value)}/></label>
         <label>Приоритет<select value={priority} onChange={e=>setPriority(e.target.value)}><option value="LOW">Низкий</option><option value="NORMAL">Обычный</option><option value="HIGH">Высокий</option><option value="CRITICAL">Критический</option></select></label>
       </div>
-      <fieldset className="organization-picker">
-        <legend>Организация</legend>
-        <div>{organizationOptions.map(option=><label className={`organization-option org-${option.value.toLowerCase()} ${organization===option.value?"selected":""}`} key={option.value}>
-          <input type="radio" name="organization" value={option.value} checked={organization===option.value} onChange={()=>setOrganization(option.value)} required/>
-          <i/><span><b>{option.label}</b></span><em>✓</em>
-        </label>)}</div>
-      </fieldset>
+      <label className="organization-select">Организация
+        <select value={organization} onChange={e=>setOrganization(e.target.value as Organization)} required>
+          {organizationOptions.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </label>
       <div className="form-grid schedule-grid">
         <label>Дата согласования чертежей<input type="date" value={drawingApprovalDate} onChange={e=>setDrawingApprovalDate(e.target.value)} required/></label>
         <label>Срок производства, рабочих дней<input type="number" min="1" max="3650" value={productionLeadDays} onChange={e=>setProductionLeadDays(e.target.value?Number(e.target.value):"")} placeholder="Например, 10" required/></label>
