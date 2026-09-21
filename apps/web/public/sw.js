@@ -26,3 +26,14 @@ self.addEventListener('fetch', (event) => {
     }
   })());
 });
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const href = event.notification.data?.href || '/';
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const existing = clients.find((client) => client.url.startsWith(self.location.origin));
+    if (existing) { await existing.focus(); existing.postMessage({ type: 'notification-click', href }); return; }
+    await self.clients.openWindow(href);
+  })());
+});
