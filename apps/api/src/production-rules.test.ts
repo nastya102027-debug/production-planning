@@ -3,6 +3,7 @@ import { nextStatus, validateSteps, elapsedSeconds, downtimeSeconds } from "./pr
 describe("production workflow", () => {
   it("blocks dependent stages and empty pause reasons", () => {
     expect(() => nextStatus("QUEUED", "start", true)).toThrow("предыдущие");
+    expect(nextStatus("QUEUED", "start", true, undefined, true)).toBe("IN_PROGRESS");
     expect(() => nextStatus("IN_PROGRESS", "pause", false, "  ")).toThrow("причину");
     expect(nextStatus("QUEUED", "start", false)).toBe("IN_PROGRESS");
     expect(nextStatus("IN_PROGRESS", "pause", false, "Нет материала")).toBe("PAUSED");
