@@ -1,0 +1,10 @@
+/* Подсказка «Установить приложение» на экране входа. Цвета — светлая палитра автора, тёмную тему даёт перекраска при сборке. */
+.install-app{margin-top:18px;font-size:13px;line-height:1.5;color:#6d7971;text-align:left}
+.install-app summary{display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;list-style:none;color:#55625b;font-weight:600}
+.install-app summary::-webkit-details-marker{display:none}
+.install-app summary svg{width:15px;height:15px}
+.install-app[open] summary{margin-bottom:10px}
+.install-app dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0;padding:12px 14px;border:1px solid #dfe5e1;border-radius:12px;background:#f7f8f6}
+.install-app dt{font-weight:700;color:#33403a}
+.install-app dd{margin:0}
+.install-app a{color:#b3472a;font-weight:600}

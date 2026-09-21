@@ -1,0 +1,15 @@
+/* Режим «только просмотр» (директор): всё, что меняет данные, скрыто. Сервер в любом случае отклоняет изменения.
+   Главные кнопки действий (.primary) скрыты по умолчанию — новая кнопка автора не появится у директора сама собой. */
+.view-only [data-edit],
+.view-only button.primary,
+.view-only .procurement-add,
+.view-only .task-actions,
+.view-only .planning-heading,
+.view-only .planning-workspace{display:none!important}
+.view-only .analytics-filters button.primary{display:inline-flex!important}
+/* формы открываются как карточки для чтения */
+.view-only .order-form :is(input,select,textarea),
+.view-only .procurement-card select,
+.view-only .task-dialog :is(input,select,textarea){pointer-events:none}
+.view-only .procurement-card select{appearance:none;-webkit-appearance:none;background-image:none}
+.view-only .procurement-card select{border-color:transparent!important;background-color:transparent!important;font-weight:600}

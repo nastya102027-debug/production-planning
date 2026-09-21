@@ -1,0 +1,67 @@
+/* кнопка солнце/луна в шапке; тёмную пару цветов достраивает перекрасчик glass/postcss-glass.mjs */
+.theme-toggle{display:grid;place-items:center;flex:none;width:38px;height:38px;padding:0;border:1px solid #d7dcd8;border-radius:8px;background:#fff;color:#33413a;cursor:pointer}
+.theme-toggle:hover{border-color:#a98649;color:#a98649}
+
+/* общие для обеих тем скругления там, где у автора прямые углы (значения ≥15px перекрасчик не трогает) */
+.order-table,.settings-section,.timeline{border-radius:18px;overflow:hidden}
+.operations-summary>*,.order-search{border-radius:16px}
+.order-search{overflow:hidden}
+.order-form{border-radius:22px;overflow:hidden}
+
+/* светлая тема: под коротким содержимым у автора проглядывал графитовый фон страницы */
+:root[data-theme="light"] .shell>main{background:#eff2f3}
+
+/* окна всегда выше липкой шапки и выдвижного меню (на телефоне шапка перекрывала окно заказа) */
+.modal-backdrop{z-index:60}
+
+/* телефон и приложения Android / iOS */
+@media(max-width:700px){
+  /* шапка: заголовок занимает остаток строки и обрезается многоточием, а не наезжает на кнопки */
+  .shell>main>header{gap:8px;padding-top:calc(10px + env(safe-area-inset-top));padding-left:calc(12px + env(safe-area-inset-left));padding-right:calc(12px + env(safe-area-inset-right))}
+  .mobile-title-row{flex:1 1 0}
+  .mobile-title-row>div{min-width:0}
+  .shell>main>header h1{max-width:100%}
+  .header-tools{flex:none}
+  .header-tools .avatar{display:none}
+  .theme-toggle{width:42px;height:42px;border-radius:16px}
+  .mobile-task-tabs{top:calc(72px + env(safe-area-inset-top))}
+  .content{padding-bottom:calc(26px + env(safe-area-inset-bottom))}
+  .order-form footer{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+  /* iOS увеличивает страницу при фокусе в поле со шрифтом мельче 16px */
+  input,select,textarea{font-size:16px}
+}
+.view-switch button{border-radius:16px}
+.analytics-metrics>*,.analytics-problems>div{border-radius:16px}
+/* поиск на «Сотрудниках» у автора без стилей: подпись над полем, поле как везде */
+.content>.page-actions+label{display:grid;gap:6px;max-width:360px;margin-bottom:14px;font-size:12px;font-weight:600;color:#66736d}
+.content>.page-actions+label input{height:40px;padding:0 12px;border:1px solid #d7dcd8;border-radius:16px;font:inherit;font-size:14px}
+/* сводка: цветная полоска слева повторяет скругление карточки, а не торчит прямым столбиком */
+.dashboard-metric{overflow:hidden}
+.dashboard-metric:before{border-radius:0}
+/* переключатель «Доска / График»: единый сегмент вместо двух отдельных кнопок */
+.view-switch{display:inline-flex;gap:4px;padding:4px;border:1px solid #d7dcd8;border-radius:18px;background:#e4e9ea}
+.view-switch button{min-width:104px;height:36px;padding:0 18px;border:0;border-radius:15px;background:transparent;color:#55625b;font-size:14px;font-weight:600;box-shadow:none;transform:none}
+.view-switch button:hover{background:#ffffff80;box-shadow:none;transform:none}
+.view-switch .selected,.view-switch .selected:hover{background:#fff;color:#18211d;box-shadow:0 1px 3px #17222c30}
+.view-switch button:focus-visible{outline-offset:1px}
+/* настройки → статусы операций: цвет, плашка и кнопка стоят на одной линии с полем названия, поле как везде */
+.status-catalog>div{align-items:end;border-radius:16px}
+.status-catalog label input{height:40px;padding:0 12px;border:1px solid #d7dcd8;border-radius:16px;background:#fff;font:inherit;font-size:14px;color:#18211d}
+.status-catalog input[type="color"]{width:40px;height:40px;padding:3px;border:1px solid #d7dcd8;border-radius:16px;background:#fff}
+.status-catalog i{height:40px;padding:0 14px;font-size:13px;font-weight:600;line-height:40px}
+.status-catalog button{height:40px;padding-top:0;padding-bottom:0}
+/* настройки: поля и строки остальных блоков — как во всей системе, без прямых углов */
+.settings-section input:not([type="checkbox"]):not([type="color"]){height:40px;padding:0 12px;border:1px solid #d7dcd8;border-radius:16px;background:#fff;font:inherit;font-size:14px;color:#18211d}
+.integration-mapping label,.reason-list>button{border-radius:16px}
+.reason-add button{height:40px;padding-top:0;padding-bottom:0}
+/* плашка статуса в карточке задачи не переносится на две строки */
+.stage-status{flex:none;white-space:nowrap}
+.position-location{border-radius:0 5px 5px 0}
+/* карточки списков (закупка, сотрудники): скругление вместо прямых углов; цветной край остаётся */
+.procurement-card{border-radius:16px}
+/* окно учётной записи: участки и галочка доступа — с теми же полями, что и остальная форма */
+.order-form>fieldset,.order-form>label{margin:0 24px 18px}
+.order-form>fieldset{padding:12px 14px;border:1px solid #d7dcd8;border-radius:16px}
+.order-form>fieldset{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:0 12px}
+.order-form input[type="checkbox"]{width:auto;height:auto}
+.procurement-add{border-radius:16px}

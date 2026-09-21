@@ -1,0 +1,98 @@
+/* «Матовое стекло» Latuning — ручные доводки поверх автоматической перекраски (glass/postcss-glass.mjs).
+   Подключается последним. Токены перенесены из старой производственной CRM. */
+:root{
+  --brass-100:#f0e3bd; --brass-200:#e0cd93; --brass-300:#c9a227; --brass-400:#9d7d22;
+  --w-1:rgba(233,239,246,.97); --w-2:rgba(199,211,226,.74); --w-3:rgba(150,166,186,.62);
+  --glass:rgba(150,172,199,.1); --glass-2:rgba(150,172,199,.055); --glass-hi:rgba(160,182,209,.15);
+  --edge:rgba(188,206,226,.17); --edge-soft:rgba(188,206,226,.09);
+  --solid:rgba(24,30,37,.96);
+  --st-done:#77c398; --st-partial:#e0a35c; --st-work:#84aedc; --st-problem:#dd8177;
+  --blur:blur(18px) saturate(1.25);
+  color:var(--w-1); background:#0b0f13; color-scheme:dark;
+  font-feature-settings:"tnum" 1;
+}
+
+/* живой фон: тёплое латунное пятно сверху, холодное стальное снизу */
+body{background:transparent!important; color:var(--w-1)!important}
+body::before{content:""; position:fixed; inset:-25%; z-index:-2; transform:rotate(-8deg);
+  filter:blur(34px) saturate(.92); pointer-events:none;
+  background:
+    radial-gradient(54% 40% at 16% 6%, rgba(201,162,39,.26), transparent 66%),
+    radial-gradient(56% 46% at 86% 90%, rgba(74,106,128,.3), transparent 66%),
+    repeating-linear-gradient(112deg, rgba(255,255,255,.028) 0 1px, transparent 1px 26px),
+    #0b0f13}
+body::after{content:""; position:fixed; inset:0; z-index:-1; background:rgba(6,9,12,.38); pointer-events:none}
+#root{position:relative; z-index:0}
+:focus-visible{outline:2px solid var(--brass-200)!important; outline-offset:2px}
+::selection{background:rgba(201,162,39,.35)}
+*{scrollbar-color:rgba(188,206,226,.25) transparent}
+
+/* каркас: рабочая область прозрачная, меню и шапка — плотное стекло (под ними прокручивается контент) */
+.content{background:transparent!important}
+.shell>aside{background:rgba(14,19,25,.82)!important; border-right:1px solid var(--edge)!important;
+  backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur)}
+.shell>main>header{background:rgba(20,26,33,.86)!important; border-color:var(--edge)!important;
+  backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur)}
+.shell>main>header h1{color:var(--w-1)!important}
+.shell>main>header p,.kicker,.planning-heading p{color:var(--brass-200)!important}
+.shell nav button,.shell nav a,.logout{color:var(--w-2)!important}
+.shell nav button.active,.shell nav button:hover,.shell nav a.active,.shell nav a:hover{
+  color:#fff!important; background:var(--glass-hi)!important; box-shadow:inset 3px 0 var(--brass-300)!important}
+
+/* стекло: карточки и панели */
+.metric,.panel,.procurement-card,.order-row,.center-card,.launch-items article,.launch-history details,
+.kanban-column,.kanban-task,.position-card,.settings-section{
+  border-color:var(--edge)!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.1) inset, 0 12px 32px rgba(0,0,0,.28)!important}
+.kanban-column{background:var(--glass-2)!important}
+.kanban-task,.position-card{background:var(--glass)!important}
+
+/* главное действие — латунь с тёмной надписью, как в старой CRM */
+.login button,.primary,.position-open,.mobile-task-tabs button.selected{color:#20180a!important; border-color:transparent!important;
+  background:linear-gradient(150deg,var(--brass-100),var(--brass-300) 60%,var(--brass-400))!important}
+.login button:hover,.primary:hover{filter:brightness(1.08)}
+/* выбранная вкладка (у автора красная) — латунь */
+.view-switch .selected{color:#20180a!important; border-color:transparent!important;
+  background:linear-gradient(150deg,var(--brass-100),var(--brass-300) 60%,var(--brass-400))!important}
+button{color:inherit}
+button:disabled{opacity:.45}
+
+/* поля ввода */
+input,textarea,select{color:#fff; background-color:var(--glass-2); border-color:var(--edge-soft)}
+input::placeholder,textarea::placeholder{color:var(--w-3)}
+input:focus,textarea:focus,select:focus{border-color:var(--brass-200)}
+select option{color:#111; background:#fff}
+input[type="date"],input[type="time"],input[type="datetime-local"]{color-scheme:dark}
+.order-search{border-color:var(--edge)!important}
+.order-search input{background:transparent!important}
+.global-search{border-color:var(--edge)!important; border-radius:14px; background:var(--glass-2)}
+.global-search input{background:transparent!important; color:#fff}
+
+/* окна и выпадающие списки: плотный фон, иначе сквозь стекло читается то, что под ними */
+.modal-backdrop{background:rgba(3,6,8,.62)!important; backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px)}
+.task-dialog,.order-form,.graph-builder{background:rgba(26,32,38,.94)!important; border:1px solid var(--edge)!important;
+  backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); box-shadow:0 30px 80px rgba(0,0,0,.55)!important}
+.task-dialog>header,.task-dialog>footer,.form-head,.order-form footer{background:rgb(28,35,42)!important; border-color:var(--edge)!important}
+.mobile-task-tabs{background:rgba(14,19,25,.9)!important}
+.route-choice-menu,.global-search>div,.global-search ul{background:var(--solid)!important; border-color:var(--edge)!important}
+
+/* вход */
+.login{background:transparent!important}
+.login form{background:rgba(28,34,38,.72)!important; border:1px solid var(--edge)!important; border-radius:26px!important;
+  backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); box-shadow:0 1px 0 rgba(255,255,255,.14) inset, 0 28px 70px rgba(0,0,0,.5)!important}
+.login h1{color:var(--w-1)!important}
+.error{border-radius:12px}
+
+/* таблицы */
+table{color:var(--w-1)}
+th{color:var(--w-3)}
+
+/* граф маршрутов (xyflow в тёмном режиме): холст прозрачный, элементы управления — стекло */
+.react-flow.dark{--xy-background-color:transparent; --xy-background-pattern-color:rgba(188,206,226,.16);
+  --xy-controls-button-background-color:rgba(24,30,37,.96); --xy-controls-button-background-color-hover:rgba(44,54,64,.96);
+  --xy-controls-button-border-color:rgba(188,206,226,.17); --xy-minimap-background-color:rgba(24,30,37,.9);
+  --xy-minimap-mask-background-color:rgba(8,11,14,.6); --xy-attribution-background-color:transparent}
+.graph-canvas{background:rgba(8,11,14,.45)!important}
+
+/* чат: всплывающие слои — плотное стекло, иначе сквозь них читается лента */
+.chat-suggest,.chat-drop{background:var(--solid)!important;backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur)}

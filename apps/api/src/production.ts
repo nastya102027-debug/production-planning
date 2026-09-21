@@ -6,9 +6,11 @@ import {forecastAttention} from "./forecast-attention.js";
 import {calendarInput} from "./work-calendar.js";
 import {capacityForecast,relatedTasks} from "./capacity-forecast.js";
 import { parseGraph, routeDetails } from "./route-graph.js";
-import { Router, type Response } from "express";
+import { Router } from "express";
+import type { EventHub } from "./event-hub.js";
 import { Prisma, type PrismaClient, type OperationStatus } from "@prisma/client";
 import { z } from "zod";
+import { seesEverything } from "./access.js";
 import { ProductionError, validateSteps, nextStatus, elapsedSeconds, downtimeSeconds } from "./production-rules.js";
 
 const routeInput = z.object({ name: z.string().trim().min(1).max(200), steps: z.array(z.object({
@@ -29,21 +31,18 @@ const operationInclude = {
   timeEntries: true, statusHistory: { orderBy: { changedAt: "asc" as const }, include: { changedBy: { select: { firstName: true, lastName: true } } } }
 };
 
-export function productionRouter(prisma: PrismaClient) {
+export function productionRouter(prisma: PrismaClient, hub: EventHub) {
   const router = Router();
-  const streams = new Set<{ res: Response; planner: boolean; centers: string[] }>();
-  function publish(centers: string[] = []) {
-    for (const stream of streams) if (stream.planner || stream.centers.some(id => centers.includes(id))) stream.res.write('event: changed\ndata: {}\n\n');
-  }
+  const publish = (centers: string[] = []) => hub.publishChanged(centers);
   router.get("/events", async (req, res) => {
     const links = await prisma.userWorkCenter.findMany({ where: { userId: req.session!.sub } });
     res.setHeader("Content-Type", "text/event-stream"); res.setHeader("Cache-Control", "no-cache"); res.setHeader("Connection", "keep-alive"); res.flushHeaders();
-    const stream = { res, planner: req.session!.role === "PLANNER", centers: links.map(link => link.workCenterId) };
-    streams.add(stream); res.write('event: changed\ndata: {}\n\n');
+    const close = hub.open(res, seesEverything(req.session!.role), links.map(link => link.workCenterId));
+    res.write('event: changed\ndata: {}\n\n');
     const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 20000);
-    req.on("close", () => { clearInterval(heartbeat); streams.delete(stream); });
+    req.on("close", () => { clearInterval(heartbeat); close(); });
   });
-  const plannerOnly = (req: any, _res: any, next: any) => { if (req.session.role !== "PLANNER") throw new ProductionError(403, "Недостаточно прав"); next(); };
+  const plannerOnly = (req: any, _res: any, next: any) => { if (!seesEverything(req.session.role)) throw new ProductionError(403, "Недостаточно прав"); next(); };
   const templateMeta=z.object({description:z.string().trim().max(2000).nullable().optional(),category:z.string().trim().max(120).nullable().optional()});
   function templateInput(body:unknown){const raw=z.object({name:z.string(),nodes:z.array(z.unknown()),edges:z.array(z.unknown())}).passthrough().parse(body);return {...parseGraph({name:raw.name,nodes:raw.nodes,edges:raw.edges}),...templateMeta.parse(raw)};}
   async function saveTemplateSteps(tx:Prisma.TransactionClient,templateId:string,steps:ReturnType<typeof parseGraph>["steps"]){
@@ -154,7 +153,7 @@ export function productionRouter(prisma: PrismaClient) {
     const actualFinish=[...operation.statusHistory].reverse().find(event=>event.toStatus==="COMPLETED")?.changedAt;
     return { normHours: operation.normHours, riskHours: operation.riskHours, id: operation.id, title: operation.title, quantity: operation.quantity, status: operation.status, priority: operation.priority,
       comment: operation.comment, stopReason: operation.stopReason, assignee: operation.assignee, workCenter: { id: operation.workCenter.id, name: operation.workCenter.name },
-      orderNumber: operation.launchItem.orderItem.order.productionOrderNumber, itemId: operation.launchItem.orderItem.id, itemQuantity: operation.launchItem.orderItem.quantity, itemName: operation.launchItem.orderItem.name, launchNumber: operation.launchItem.launch.number,
+      orderId: operation.launchItem.orderItem.order.id, orderNumber: operation.launchItem.orderItem.order.productionOrderNumber, itemId: operation.launchItem.orderItem.id, itemQuantity: operation.launchItem.orderItem.quantity, itemName: operation.launchItem.orderItem.name, launchNumber: operation.launchItem.launch.number,
       route: { id: operation.launchItem.route.id, name: operation.launchItem.route.name, steps: operation.launchItem.route.steps.map(step => ({ id: step.id, title: step.title, workCenter: step.workCenter.name, material: step.material, quantity: step.quantity, unit: step.unit, components: step.components })) }, routeOperations: operation.launchItem.operations.map(stage=>({id:stage.id,status:stage.status,workCenter:stage.workCenter.name,predecessorIds:stage.predecessors.map(link=>link.predecessorId)})),
       plannedStart: operation.plannedStart ?? operation.launchItem.launch.plannedStart, stagePlannedStart: operation.plannedStart, plannedFinish: operation.plannedFinish, queueOrder: operation.queueOrder, planVersion: operation.planVersion, dueDate: operation.plannedFinish ?? operation.dueDate, predecessors: operation.predecessors.map(link => link.predecessor),
       actualStart, actualFinish, workSeconds: elapsedSeconds(operation.timeEntries, now), downtimeSeconds: downtimeSeconds(operation.statusHistory, now), serverNow: now.toISOString(),
@@ -166,7 +165,7 @@ export function productionRouter(prisma: PrismaClient) {
     const deadlineWhere:Prisma.OperationWhereInput=query.deadline==="TODAY"?{OR:[{plannedFinish:{gte:dayStart,lt:dayEnd}},{plannedFinish:null,dueDate:{gte:dayStart,lt:dayEnd}}]}:query.deadline==="OVERDUE"?{OR:[{plannedFinish:{lt:dayStart}},{plannedFinish:null,dueDate:{lt:dayStart}}]}:{};
     const searchWhere:Prisma.OperationWhereInput[]=query.search?[{OR:[{launchItem:{orderItem:{name:{contains:query.search,mode:"insensitive"}}}},{launchItem:{orderItem:{order:{productionOrderNumber:{contains:query.search,mode:"insensitive"}}}}},{launchItem:{launch:{number:{contains:query.search,mode:"insensitive"}}}}]}]:[];
     const where: Prisma.OperationWhereInput = {
-      ...(req.session!.role === "PLANNER" ? {} : { workCenter: { users: { some: { userId: req.session!.sub } } } }),
+      ...(seesEverything(req.session!.role) ? {} : { workCenter: { users: { some: { userId: req.session!.sub } } } }),
       ...(query.workCenterId ? { workCenterId: query.workCenterId } : {}), ...(query.assigneeId ? { assigneeId: query.assigneeId } : query.unassigned ? { assigneeId: null } : {}), ...(query.priority ? { priority: query.priority } : {}), ...(query.status ? { status: query.status } : { status: { not: "CANCELLED" } }),
       AND:[deadlineWhere,...searchWhere]
     };
@@ -175,7 +174,7 @@ export function productionRouter(prisma: PrismaClient) {
   });
   router.get("/operations/summary", async (req,res) => {
     const workCenterId=z.object({workCenterId:z.string().uuid().optional()}).parse(req.query).workCenterId;
-    const where:Prisma.OperationWhereInput={...(req.session!.role==="PLANNER"?{}:{workCenter:{users:{some:{userId:req.session!.sub}}}}),...(workCenterId?{workCenterId}:{})};
+    const where:Prisma.OperationWhereInput={...(seesEverything(req.session!.role)?{}:{workCenter:{users:{some:{userId:req.session!.sub}}}}),...(workCenterId?{workCenterId}:{})};
     const dayStart=new Date();dayStart.setUTCHours(0,0,0,0);
     const [groups,completedToday]=await prisma.$transaction([
       prisma.operation.groupBy({by:["status"],where,orderBy:{status:"asc"},_count:true}),
@@ -184,7 +183,7 @@ export function productionRouter(prisma: PrismaClient) {
     res.json({counts:Object.fromEntries(groups.map(group=>[group.status,group._count])),completedToday});
   });
   router.get("/operations/:id", async (req, res) => {
-    const operation = await prisma.operation.findFirst({ where: { id: String(req.params.id), ...(req.session!.role === "PLANNER" ? {} : { workCenter: { users: { some: { userId: req.session!.sub } } } }) }, include: operationInclude });
+    const operation = await prisma.operation.findFirst({ where: { id: String(req.params.id), ...(seesEverything(req.session!.role) ? {} : { workCenter: { users: { some: { userId: req.session!.sub } } } }) }, include: operationInclude });
     if (!operation) throw new ProductionError(404, "Задача не найдена");
     res.json(presentOperation(operation));
   });
@@ -326,7 +325,7 @@ export function productionRouter(prisma: PrismaClient) {
       if (!initial) throw new ProductionError(404, "Задача не найдена");
       // Share the order lock with launch creation and completion rollups.
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${initial.launchItem.orderItem.orderId} FOR UPDATE`;
-      const current = await tx.operation.findFirst({ where: { id: operationId, ...(req.session!.role === "PLANNER" ? {} : { workCenter: { users: { some: { userId } } } }) }, include: operationInclude });
+      const current = await tx.operation.findFirst({ where: { id: operationId, ...(seesEverything(req.session!.role) ? {} : { workCenter: { users: { some: { userId } } } }) }, include: operationInclude });
       if (!current) throw new ProductionError(404, "Задача не найдена");
       if (input.action === "cancel" && req.session!.role !== "PLANNER") throw new ProductionError(403, "Отменять операции может только Планер");
       const now = new Date();
@@ -350,7 +349,7 @@ export function productionRouter(prisma: PrismaClient) {
         }
       }
       if (input.action === "pause" || input.action === "problem") {
-        const planners = await tx.user.findMany({ where: { role: "PLANNER", active: true }, select: { id: true } });
+        const planners = await tx.user.findMany({ where: { role: { in: ["PLANNER", "DIRECTOR"] }, active: true }, select: { id: true } });
         await tx.notification.create({ data: { type: input.action === "pause" ? "OPERATION_PAUSED" : "PROBLEM", title: `${current.workCenter.name} · заказ № ${current.launchItem.orderItem.order.productionOrderNumber}`, message: `${current.launchItem.orderItem.name}\n${note}`, entityType: "Operation", entityId: operationId, recipients: { create: planners.map(user => ({ userId: user.id })) } } });
       }
       await tx.auditLog.create({ data: { actorId: userId, action: `OPERATION_${input.action.toUpperCase()}`, entityType: "Operation", entityId: operationId, before: { status: current.status }, after: input } });

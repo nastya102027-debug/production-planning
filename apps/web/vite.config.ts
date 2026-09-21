@@ -1,8 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import glass from "./glass/postcss-glass.mjs";
 
 export default defineConfig({
   plugins: [react()],
+  css: { postcss: { plugins: [glass()] } },
   build: {
     rollupOptions: {
       output: {

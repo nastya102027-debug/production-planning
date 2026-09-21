@@ -25,6 +25,8 @@ coverage/
 *.dump
 *.backup
 postgres-data/
+# вложения чата и прочие загруженные файлы
+data/
 
 # Private keys and certificates
 *.pem

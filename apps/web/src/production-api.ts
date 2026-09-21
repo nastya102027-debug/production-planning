@@ -7,18 +7,24 @@ export async function productionApi<T>(path: string, init?: RequestInit): Promis
 }
 
 // A single authenticated stream invalidates screens; records are fetched with server-side access checks.
+// «changed» — производственные экраны, «chat» — чат заказов.
+type Channel = "changed" | "chat";
 let stream: EventSource | null = null;
-const listeners = new Set<() => void>();
-export function useProductionEvents() {
+const listeners: Record<Channel, Set<() => void>> = { changed: new Set(), chat: new Set() };
+function useChannel(channel: Channel) {
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     const listener = () => setRevision(value => value + 1);
-    listeners.add(listener);
+    listeners[channel].add(listener);
     if (!stream) {
       stream = new EventSource("/api/events", { withCredentials: true });
-      stream.addEventListener("changed", () => listeners.forEach(notify => notify()));
+      for (const name of ["changed", "chat"] as const) stream.addEventListener(name, () => listeners[name].forEach(notify => notify()));
+      // «changed» сервер шлёт сам при каждом подключении; чат после обрыва связи перечитываем по открытию потока
+      stream.addEventListener("open", () => listeners.chat.forEach(notify => notify()));
     }
-    return () => { listeners.delete(listener); if (!listeners.size) { stream?.close(); stream = null; } };
-  }, []);
+    return () => { listeners[channel].delete(listener); if (!listeners.changed.size && !listeners.chat.size) { stream?.close(); stream = null; } };
+  }, [channel]);
   return revision;
 }
+export function useProductionEvents() { return useChannel("changed"); }
+export function useChatEvents() { return useChannel("chat"); }

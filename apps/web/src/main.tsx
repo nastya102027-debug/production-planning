@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { AlertTriangle, Boxes, ClipboardList, Factory, LogOut, Menu, PackageCheck, Plus, Search, X, Clock, Route as RouteIcon } from "lucide-react";
+import { AlertTriangle, Boxes, ClipboardList, Factory, LogOut, Menu, MessageCircle, PackageCheck, Plus, Search, X, Clock, Route as RouteIcon } from "lucide-react";
 import "./styles.css";
 import "./interaction.css";
 import "./latuning-theme.css";
@@ -17,17 +17,25 @@ import { IntegrationMapping } from "./integration-mapping";
 import { RouteTemplates } from "./route-templates";
 import "./responsive-design.css";
 import "./mobile-app.css";
+import "./glass-overrides.css";
+import { ThemeToggle } from "./theme";
+import { roleLabel, type UiRole } from "./roles";
+import "./director.css";
+import { ViewOnly, useViewOnly } from "./view-only";
+import { ChatScreen, useChatUnread } from "./chat";
+import { OrderFilesDialog } from "./order-files";
+import { InstallApp, registerServiceWorker } from "./install-app";
 
-type User = { firstName:string; lastName:string; role:"PLANNER"|"EMPLOYEE"; workCenters:{workCenter:{id:string;name:string}}[] };
+type User = { firstName:string; lastName:string; role:UiRole; workCenters:{workCenter:{id:string;name:string}}[] };
 type Summary = { orders:number; inProcurement:number; operations:number; stopped:number };
 type Organization = "IP_VETROV"|"LATUNING"|"ECONTRID";
 type OrderItem = { archivedAt?:string; comment?:string; id:string; name:string; quantity:number; completedQuantity:number; unitPrice:number; total:number; updatedAt:string };
 type Order = { updatedAt:string; archivedAt?:string; id:string; productionOrderNumber:string; customerOrderNumber?:string; organization?:Organization; drawingApprovalDate?:string; productionLeadDays?:number; status:string; priority:string; dueDate?:string; items:OrderItem[]; total:number; completedTotal:number };
 type Procurement = { id:string; status:string; startedAt:string; expectedAt?:string; readyAt?:string; deadlineState:string; comment?:string; responsible?:{id:string;firstName:string;lastName:string}; order:Order };
 type UserOption = { id:string; firstName:string; lastName:string; role:string };
-type DraftItem = { id?:string; updatedAt?:string; comment?:string; name:string; quantity:number|""; unitPrice:number };
-type Page = "overview"|"orders"|"procurement"|"launches"|"templates"|"problems"|"centers"|"staff"|"analytics"|"integration";
-const pages:Page[]=["overview","orders","procurement","launches","templates","problems","centers","staff","analytics","integration"];
+type DraftItem = { id?:string; updatedAt?:string; comment?:string; name:string; quantity:number|""; unitPrice:number|"" };
+type Page = "overview"|"orders"|"procurement"|"launches"|"templates"|"problems"|"centers"|"staff"|"analytics"|"integration"|"chat";
+const pages:Page[]=["overview","orders","procurement","launches","templates","problems","centers","staff","analytics","integration","chat"];
 
 async function api<T>(path:string, init?:RequestInit):Promise<T> {
   const response = await fetch(`/api${path}`, { ...init, credentials:"include", headers:{"Content-Type":"application/json",...init?.headers} });
@@ -38,11 +46,11 @@ const money = (value:number) => new Intl.NumberFormat("ru-RU", { style:"currency
 const statusLabel:Record<string,string> = { DRAFT:"Черновик", PROCUREMENT:"В закупке", READY_FOR_LAUNCH:"Готов к запуску", IN_PRODUCTION:"В производстве", PARTIALLY_READY:"Частично готов", COMPLETED:"Готов" };
 const priorityLabel:Record<string,string> = { LOW:"Низкий", NORMAL:"Обычный", HIGH:"Высокий", CRITICAL:"Критический" };
 const organizationOptions:{value:Organization;label:string}[] = [
-  {value:"IP_VETROV",label:"ИП Ветров"},
+  {value:"IP_VETROV",label:"ИП Ветров Латунинг Эконитрид"},
   {value:"LATUNING",label:"Латунинг"},
   {value:"ECONTRID",label:"Эконтрид"}
 ];
-const organizationLabel:Record<Organization,string> = {IP_VETROV:"ИП Ветров",LATUNING:"Латунинг",ECONTRID:"Эконтрид"};
+const organizationLabel:Record<Organization,string> = {IP_VETROV:"ИП Ветров Латунинг Эконитрид",LATUNING:"Латунинг",ECONTRID:"Эконтрид"};
 
 function calculateDueDate(startValue:string, workingDaysValue:number|string):string {
   const workingDays=Number(workingDaysValue);
@@ -63,7 +71,7 @@ function displayDate(value?:string):string {
 function Login({onLogin}:{onLogin:(user:User)=>void}) {
   const [login,setLogin]=useState(""); const [password,setPassword]=useState(""); const [error,setError]=useState("");
   async function submit(event:React.FormEvent) { event.preventDefault(); setError(""); try { await api("/auth/login",{method:"POST",body:JSON.stringify({login,password})}); onLogin(await api<User>("/me")); } catch(error) { setError(error instanceof Error?error.message:"Ошибка входа"); } }
-  return <main className="login"><form onSubmit={submit}><div className="brand-mark">К</div><h1>LATUNING</h1><p>Управление производством</p><label>Логин<input value={login} onChange={e=>setLogin(e.target.value)} autoFocus/></label><label>Пароль<input type="password" value={password} onChange={e=>setPassword(e.target.value)}/></label>{error&&<div className="error">{error}</div>}<button>Войти</button></form></main>;
+  return <main className="login"><form onSubmit={submit}><div className="brand-mark">К</div><h1>LATUNING</h1><p>Управление производством</p><label>Логин<input value={login} onChange={e=>setLogin(e.target.value)} autoFocus/></label><label>Пароль<input type="password" value={password} onChange={e=>setPassword(e.target.value)}/></label>{error&&<div className="error">{error}</div>}<button>Войти</button><InstallApp/></form></main>;
 }
 
 function Metric({icon:Icon,value,label,tone=""}:{icon:typeof Factory;value:number;label:string;tone?:string}) { return <article className={`metric ${tone}`}><Icon/><div><strong>{value}</strong><span>{label}</span></div></article>; }
@@ -79,12 +87,13 @@ function EmptyPanel({eyebrow,title,icon:Icon,text}:{eyebrow:string;title:string;
 function OrderForm({onClose,onCreated,existing}:{onClose:()=>void;onCreated:(order:Order)=>void;existing?:Order}) {
   const [productionOrderNumber,setProductionOrderNumber]=useState(existing?.productionOrderNumber??"");
   const [customerOrderNumber,setCustomerOrderNumber]=useState(existing?.customerOrderNumber??"");
-  const [organization,setOrganization]=useState<Organization|"">(existing?.organization??"");
+  const [organization,setOrganization]=useState<Organization|"">(existing?.organization??"IP_VETROV");
   const [drawingApprovalDate,setDrawingApprovalDate]=useState(existing?.drawingApprovalDate?.slice(0,10)??"");
   const [productionLeadDays,setProductionLeadDays]=useState<number|"">(existing?.productionLeadDays??"");
   const [priority,setPriority]=useState(existing?.priority??"NORMAL");
   const [error,setError]=useState("");
-  const [items,setItems]=useState<DraftItem[]>(existing?.items.map(i=>({id:i.id,updatedAt:i.updatedAt,name:i.name,quantity:i.quantity,unitPrice:i.unitPrice,comment:i.comment}))??[{name:"",quantity:"",unitPrice:0}]);
+  const [items,setItems]=useState<DraftItem[]>(existing?.items.map(i=>({id:i.id,updatedAt:i.updatedAt,name:i.name,quantity:i.quantity,unitPrice:i.unitPrice,comment:i.comment}))??[{name:"",quantity:"",unitPrice:""}]);
+  const [updatedAt,setUpdatedAt]=useState(existing?.updatedAt??"");
   const [archivedItems,setArchivedItems]=useState<OrderItem[]>([]);
   const total=items.reduce((sum,item)=>sum+(Number(item.quantity)||0)*(Number(item.unitPrice)||0),0);
   const dueDate=calculateDueDate(drawingApprovalDate,productionLeadDays);
@@ -92,6 +101,7 @@ function OrderForm({onClose,onCreated,existing}:{onClose:()=>void;onCreated:(ord
   async function loadItems() {
     if(!existing)return;
     const order=await api<Order>(`/orders/${existing.id}?items=all`);
+    setUpdatedAt(order.updatedAt);
     setItems(order.items.filter(item=>!item.archivedAt).map(item=>({id:item.id,updatedAt:item.updatedAt,name:item.name,quantity:item.quantity,unitPrice:item.unitPrice,comment:item.comment})));
     setArchivedItems(order.items.filter(item=>item.archivedAt));
   }
@@ -108,14 +118,14 @@ function OrderForm({onClose,onCreated,existing}:{onClose:()=>void;onCreated:(ord
     setError("");
     try {
       const order=await api<Order>(existing?`/orders/${existing.id}`:"/orders",{method:existing?"PUT":"POST",body:JSON.stringify({
-        ...(existing?{updatedAt:existing.updatedAt}:{}),
+        ...(existing?{updatedAt}:{}),
         productionOrderNumber,
         customerOrderNumber:customerOrderNumber||undefined,
         organization,
         drawingApprovalDate,
         productionLeadDays:Number(productionLeadDays),
         priority,
-        items:items.map(item=>({...item,quantity:Number(item.quantity)}))
+        items:items.map(item=>({...item,quantity:Number(item.quantity),unitPrice:Number(item.unitPrice)}))
       })});
       onCreated(order);
     } catch(error) {
@@ -142,24 +152,25 @@ function OrderForm({onClose,onCreated,existing}:{onClose:()=>void;onCreated:(ord
         <label>Срок производства, рабочих дней<input type="number" min="1" max="3650" value={productionLeadDays} onChange={e=>setProductionLeadDays(e.target.value?Number(e.target.value):"")} placeholder="Например, 10" required/></label>
         <div className={`due-preview ${dueDate?"ready":""}`}><span>Конечный срок</span><strong>{dueDate?displayDate(dueDate):"Рассчитается автоматически"}</strong></div>
       </div>
-      <div className="items-head"><h3>Продукция / номенклатура</h3><button type="button" onClick={()=>setItems([...items,{name:"",quantity:"",unitPrice:0}])}><Plus/> Добавить позицию</button></div>
+      <div className="items-head"><h3>Продукция / номенклатура</h3><button data-edit type="button" onClick={()=>setItems([...items,{name:"",quantity:"",unitPrice:""}])}><Plus/> Добавить позицию</button></div>
       <div className="draft-items">{items.map((item,index)=><div className="draft-item" key={index}>
         <label>Номенклатура<input value={item.name} onChange={e=>patchItem(index,{name:e.target.value})} required/></label>
         <label>Количество, шт.<input type="number" min="1" value={item.quantity} onChange={e=>patchItem(index,{quantity:e.target.value?Number(e.target.value):""})} required/></label>
-        <label>Цена за единицу, ₽<input type="number" min="0" step="0.01" value={item.unitPrice} onChange={e=>patchItem(index,{unitPrice:Number(e.target.value)})} required/></label>
-        <strong>{money(Number(item.quantity)*item.unitPrice)}</strong>
-        {existing&&item.id&&<button type="button" className="archive-item" title="В архив" onClick={()=>void setItemArchived(item,true)}>В архив</button>}
-        {items.length>1&&<button type="button" className="remove" onClick={()=>{if(!item.id||window.confirm("Удалить позицию из заказа?"))setItems(items.filter((_,i)=>i!==index));}}><X/></button>}
+        <label>Цена за единицу, ₽<input type="number" min="0" step="0.01" value={item.unitPrice} placeholder="Введите цену" onChange={e=>patchItem(index,{unitPrice:e.target.value===""?"":Number(e.target.value)})} required/></label>
+        <strong>{money((Number(item.quantity)||0)*(Number(item.unitPrice)||0))}</strong>
+        {existing&&item.id&&<button data-edit type="button" className="archive-item" title="В архив" onClick={()=>void setItemArchived(item,true)}>В архив</button>}
+        {items.length>1&&<button data-edit type="button" className="remove" onClick={()=>{if(!item.id||window.confirm("Удалить позицию из заказа?"))setItems(items.filter((_,i)=>i!==index));}}><X/></button>}
       </div>)}</div>
-      {existing&&archivedItems.length>0&&<section className="archived-items"><h3>Архив позиций</h3>{archivedItems.map(item=><div key={item.id}><span><b>{item.name}</b><small>{item.quantity} шт. · {money(item.unitPrice*item.quantity)}</small></span><button type="button" className="secondary" onClick={()=>void setItemArchived(item,false)}>Восстановить</button></div>)}</section>}
+      {existing&&archivedItems.length>0&&<section className="archived-items"><h3>Архив позиций</h3>{archivedItems.map(item=><div key={item.id}><span><b>{item.name}</b><small>{item.quantity} шт. · {money(item.unitPrice*item.quantity)}</small></span><button data-edit type="button" className="secondary" onClick={()=>void setItemArchived(item,false)}>Восстановить</button></div>)}</section>}
       {error&&<div className="error">{error}</div>}
       <footer><div><span>Итого по заказу</span><strong>{money(total)}</strong></div><button type="button" className="secondary" onClick={onClose}>Отмена</button><button className="primary">{existing?"Сохранить изменения":"Создать заказ"}</button></footer>
     </form>
   </div>;
 }
 
-function OrdersScreen() {
+function OrdersScreen({onOpenChat}:{onOpenChat:(orderId:string)=>void}) {
   const [forecastOrder,setForecastOrder]=useState<Order|null>(null);
+  const [filesOrder,setFilesOrder]=useState<Order|null>(null);
   const [clearing,setClearing]=useState(false),[importBusy,setImportBusy]=useState(false),[notice,setNotice]=useState(""); const importInput=useRef<HTMLInputElement>(null);
   const [orders,setOrders]=useState<Order[]>([]); const [loading,setLoading]=useState(true); const [search,setSearch]=useState(""); const [showForm,setShowForm]=useState(false); const [editing,setEditing]=useState<Order>(); const [archived,setArchived]=useState(false); const [error,setError]=useState("");
   const load=()=>{setLoading(true);return api<Order[]>(`/orders?archived=${archived}&search=${encodeURIComponent(search)}`).then(setOrders).catch(e=>setError(e.message)).finally(()=>setLoading(false));};
@@ -170,19 +181,20 @@ function OrdersScreen() {
   }
   async function previewImport(file:File){setImportBusy(true);setError("");setNotice("");try{const csv=await file.text();const result=await api<{rows:number;errors:string[]}>("/orders/import/preview",{method:"POST",body:JSON.stringify({csv})});if(result.errors.length){setNotice(`Проверено строк: ${result.rows}. Ошибки: ${result.errors.join("; ")}`);return;}if(!window.confirm(`Проверено строк: ${result.rows}. Импортировать новые заказы? Существующие заказы не будут изменены.`)){setNotice("CSV проверен. Импорт отменён.");return;}const imported=await api<{orders:number;items:number}>("/orders/import",{method:"POST",body:JSON.stringify({csv})});setNotice(`Импортировано заказов: ${imported.orders}, позиций: ${imported.items}.`);await load();}catch(e){setError(e instanceof Error?e.message:"Не удалось импортировать CSV");}finally{setImportBusy(false);if(importInput.current)importInput.current.value="";}}
   useEffect(()=>{void load();},[archived]);
+  const viewOnly=useViewOnly();
   return <div className="content orders-page">
-    <div className="page-actions"><div><p className="kicker">ЗАКАЗЫ</p><h2>Портфель заказов</h2></div><div><label className="order-search"><Search/><input placeholder="Номер производства или покупателя" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load()}/></label><a className="secondary" href={`/api/orders/export?archived=${archived}&search=${encodeURIComponent(search)}`} download="production-orders.csv">Экспорт CSV</a><button className="secondary" disabled={importBusy} onClick={()=>importInput.current?.click()}>Проверить CSV</button><input ref={importInput} hidden type="file" accept=".csv,text/csv" onChange={e=>{const file=e.target.files?.[0];if(file)void previewImport(file);}}/><button className="primary" onClick={()=>{setEditing(undefined);setShowForm(true);}}><Plus/> Новый заказ</button></div></div>
-    <div className="page-actions"><button className="secondary" disabled={clearing} onClick={()=>{setArchived(!archived);setNotice("");}}>{archived?"Показать активные заказы":"Открыть архив"}</button><button className="secondary" onClick={()=>void load()}>Обновить список</button>{archived&&<button className="secondary" disabled={clearing||loading} onClick={()=>void clearArchive()}>{clearing?"Очищаю…":"Очистить всё"}</button>}</div>{notice&&<p role="status">{notice}</p>}{error&&<p className="error" role="alert">{error}</p>}
+    <div className="page-actions"><div><p className="kicker">ЗАКАЗЫ</p><h2>Портфель заказов</h2></div><div><label className="order-search"><Search/><input placeholder="Номер производства или покупателя" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load()}/></label><a className="secondary" href={`/api/orders/export?archived=${archived}&search=${encodeURIComponent(search)}`} download="production-orders.csv">Экспорт CSV</a><button data-edit className="secondary" disabled={importBusy} onClick={()=>importInput.current?.click()}>Проверить CSV</button><input ref={importInput} hidden type="file" accept=".csv,text/csv" onChange={e=>{const file=e.target.files?.[0];if(file)void previewImport(file);}}/><button className="primary" onClick={()=>{setEditing(undefined);setShowForm(true);}}><Plus/> Новый заказ</button></div></div>
+    <div className="page-actions"><button className="secondary" disabled={clearing} onClick={()=>{setArchived(!archived);setNotice("");}}>{archived?"Показать активные заказы":"Открыть архив"}</button><button className="secondary" onClick={()=>void load()}>Обновить список</button>{archived&&<button data-edit className="secondary" disabled={clearing||loading} onClick={()=>void clearArchive()}>{clearing?"Очищаю…":"Очистить всё"}</button>}</div>{notice&&<p role="status">{notice}</p>}{error&&<p className="error" role="alert">{error}</p>}
     <div className="order-table">
       <div className="order-row heading"><span>Заказ / организация</span><span>Срок</span><span>Статус</span><span>Позиции</span><span>Готово</span><span>Стоимость</span></div>
       {loading?<div className="table-empty">Загрузка…</div>:orders.length===0?<div className="table-empty"><ClipboardList/><b>{archived?"Архив пуст":"Заказов пока нет"}</b><span>{archived?"Нет записей по текущему поиску":"Создайте первый заказ вручную"}</span></div>:orders.map(order=><div className="order-row" key={order.id}>
         <span><b>Производство № {order.productionOrderNumber}</b><small>Заказ покупателя № {order.customerOrderNumber||"—"}</small>{order.organization&&<i className={`organization-badge org-${order.organization.toLowerCase()}`}>{organizationLabel[order.organization]}</i>}</span>
         <span><b>{displayDate(order.dueDate)}</b>{order.drawingApprovalDate&&<small>Согласовано: {displayDate(order.drawingApprovalDate)} · {order.productionLeadDays} раб. дн.</small>}</span>
         <span><i className={`status ${order.status.toLowerCase()}`}>{statusLabel[order.status]||order.status}</i><small>{priorityLabel[order.priority]}</small></span>
-        <span>{order.items.length}</span><span>{money(order.completedTotal)}</span><span><b>{money(order.total)}</b>{!archived&&<button className="secondary" onClick={()=>{setEditing(order);setShowForm(true);}}>Изменить</button>}{!archived&&<button className="secondary" onClick={()=>setForecastOrder(order)}>Прогноз</button>}<button className="secondary" disabled={clearing} onClick={()=>void archive(order)}>{archived?"Восстановить":"В архив"}</button>{archived&&<button className="secondary" disabled={clearing} onClick={()=>void clearArchive(order)}>Очистить</button>}</span>
+        <span>{order.items.length}</span><span>{money(order.completedTotal)}</span><span><b>{money(order.total)}</b>{!archived&&<button className="secondary" onClick={()=>{setEditing(order);setShowForm(true);}}>{viewOnly?"Открыть":"Изменить"}</button>}{!archived&&<button className="secondary" onClick={()=>setForecastOrder(order)}>Прогноз</button>}<button className="secondary" onClick={()=>setFilesOrder(order)}>Файлы</button><button className="secondary" onClick={()=>onOpenChat(order.id)}>Чат</button><button data-edit className="secondary" disabled={clearing} onClick={()=>void archive(order)}>{archived?"Восстановить":"В архив"}</button>{archived&&<button data-edit className="secondary" disabled={clearing} onClick={()=>void clearArchive(order)}>Очистить</button>}</span>
       </div>)}
     </div>
-    {forecastOrder&&<div className="modal-backdrop"><section className="task-dialog" role="dialog" aria-modal="true" aria-label="Прогноз заказа"><header><h2>Заказ № {forecastOrder.productionOrderNumber}</h2><button aria-label="Закрыть прогноз" onClick={()=>{setForecastOrder(null);void load();}}>×</button></header><OrderForecast id={forecastOrder.id}/></section></div>}
+    {filesOrder&&<OrderFilesDialog orderId={filesOrder.id} title={`Заказ № ${filesOrder.productionOrderNumber}`} onClose={()=>setFilesOrder(null)}/>}{forecastOrder&&<div className="modal-backdrop"><section className="task-dialog" role="dialog" aria-modal="true" aria-label="Прогноз заказа"><header><h2>Заказ № {forecastOrder.productionOrderNumber}</h2><button aria-label="Закрыть прогноз" onClick={()=>{setForecastOrder(null);void load();}}>×</button></header><OrderForecast id={forecastOrder.id}/></section></div>}
     {showForm&&<OrderForm existing={editing} onClose={()=>setShowForm(false)} onCreated={()=>{setShowForm(false);void load();}}/>}
   </div>;
 }
@@ -205,25 +217,28 @@ function GlobalSearch({onSelect}:{onSelect:(item:SearchResult)=>void}){
 }
 
 function Shell({user,onLogout}:{user:User;onLogout:()=>void}) {
-  const employee=user.role==="EMPLOYEE";
+  const employee=user.role==="EMPLOYEE"; const viewOnly=user.role==="DIRECTOR";
   const [menuOpen,setMenuOpen]=useState(false);
-  const locationState=()=>{const params=new URLSearchParams(window.location.hash.slice(1));const requested=params.get("page");const page=pages.includes(requested as Page)&&(!employee||requested==="overview")?requested as Page:"overview";return {page,center:page==="centers"?params.get("center")||"":"",focus:page==="centers"?params.get("task")||"":""};};
+  const locationState=()=>{const params=new URLSearchParams(window.location.hash.slice(1));const requested=params.get("page");const page=pages.includes(requested as Page)&&(!employee||requested==="overview"||requested==="chat")?requested as Page:"overview";return {page,center:page==="centers"?params.get("center")||"":"",focus:page==="centers"?params.get("task")||"":"",chatOrder:page==="chat"?params.get("order")||"":""};};
   const initialLocation=locationState();
-  const [page,setPage]=useState<Page>(initialLocation.page); const [center,setCenter]=useState(initialLocation.center); const [focus,setFocus]=useState(initialLocation.focus);
-  const navigate=(nextPage:Page,nextCenter="",nextFocus="")=>{const safePage=employee?"overview":nextPage;setPage(safePage);setCenter(safePage==="centers"?nextCenter:"");setFocus(safePage==="centers"?nextFocus:"");setMenuOpen(false);const params=new URLSearchParams({page:safePage});if(safePage==="centers"&&nextCenter)params.set("center",nextCenter);if(safePage==="centers"&&nextFocus)params.set("task",nextFocus);window.history.pushState(null,"",`#${params.toString()}`);};
-  useEffect(()=>{const restore=()=>{const saved=locationState();setPage(saved.page);setCenter(saved.center);setFocus(saved.focus);};window.addEventListener("popstate",restore);window.addEventListener("hashchange",restore);return()=>{window.removeEventListener("popstate",restore);window.removeEventListener("hashchange",restore);};},[]);
-  const titles:Record<Page,string>={overview:employee?`Мой участок — ${user.workCenters[0]?.workCenter.name??"не назначен"}`:"Производство сегодня",orders:"Заказы",procurement:"Закупка",launches:"Производственные запуски",templates:"Шаблоны маршрутов",problems:"Уведомления Планеру",staff:"Сотрудники",analytics:"Аналитика",centers:"Производственные участки",integration:"Настройки"};
+  const [page,setPage]=useState<Page>(initialLocation.page); const [center,setCenter]=useState(initialLocation.center); const [focus,setFocus]=useState(initialLocation.focus); const [chatOrder,setChatOrder]=useState(initialLocation.chatOrder); const chatUnread=useChatUnread();
+  const navigate=(nextPage:Page,nextCenter="",nextFocus="",nextChatOrder="")=>{const safePage=employee&&nextPage!=="chat"?"overview":nextPage;setPage(safePage);setChatOrder(safePage==="chat"?nextChatOrder:"");setCenter(safePage==="centers"?nextCenter:"");setFocus(safePage==="centers"?nextFocus:"");setMenuOpen(false);const params=new URLSearchParams({page:safePage});if(safePage==="centers"&&nextCenter)params.set("center",nextCenter);if(safePage==="centers"&&nextFocus)params.set("task",nextFocus);if(safePage==="chat"&&nextChatOrder)params.set("order",nextChatOrder);window.history.pushState(null,"",`#${params.toString()}`);};
+  useEffect(()=>{const restore=()=>{const saved=locationState();setPage(saved.page);setCenter(saved.center);setFocus(saved.focus);setChatOrder(saved.chatOrder);};window.addEventListener("popstate",restore);window.addEventListener("hashchange",restore);return()=>{window.removeEventListener("popstate",restore);window.removeEventListener("hashchange",restore);};},[]);
+  const titles:Record<Page,string>={overview:employee?`Мой участок — ${user.workCenters[0]?.workCenter.name??"не назначен"}`:"Производство сегодня",orders:"Заказы",procurement:"Закупка",launches:"Производственные запуски",templates:"Шаблоны маршрутов",problems:"Уведомления Планеру",staff:"Сотрудники",analytics:"Аналитика",centers:"Производственные участки",integration:"Настройки",chat:"Чат заказов"};
   const openCenter=(id:string)=>navigate("centers",id);
+  const openChat=(orderId="")=>navigate("chat","","",orderId);
+  const chatBadge=chatUnread.unread>0||chatUnread.mentions>0?<span className="chat-badge" aria-label="Непрочитанные сообщения">{chatUnread.mentions>0?"@":""}{chatUnread.unread||""}</span>:null;
   const openTask=(id:string)=>navigate(id?"centers":"problems","",id);
   const openSearch=(item:SearchResult)=>{if(item.type==="operation")navigate("centers",item.centerId||"",item.id);else if(item.type==="employee")navigate("staff");else if(item.type==="launch")navigate("launches");else navigate("orders");};
   const nav=(target:Page,Icon:typeof Factory,label:string)=><button className={page===target?"active":""} onClick={()=>navigate(target)}><Icon/> {label}</button>;
-  return <div className={`shell ${employee?"employee-shell":"planner-shell"} ${menuOpen?"menu-open":""}`}>
+  return <ViewOnly.Provider value={viewOnly}><div className={`shell ${employee?"employee-shell":"planner-shell"} ${viewOnly?"view-only":""} ${menuOpen?"menu-open":""}`}>
     {!employee&&<button className="mobile-nav-backdrop" aria-label="Закрыть меню" onClick={()=>setMenuOpen(false)}/>}
-    <aside><div className="logo"><span>К</span><b>LATUNING</b></div><nav>{nav("overview",Factory,employee?"Мой участок":"Обзор")}{!employee&&<>{nav("orders",ClipboardList,"Заказы")}{nav("procurement",PackageCheck,"Закупка")}{nav("launches",Boxes,"Запуски")}{nav("templates",RouteIcon,"Шаблоны")}{nav("centers",Factory,"Участки")}{nav("problems",AlertTriangle,"Уведомления")}{nav("staff",Factory,"Сотрудники")}{nav("analytics",Clock,"Аналитика")}{nav("integration",PackageCheck,"Настройки")}</>}</nav><button className="logout" onClick={onLogout}><LogOut/> Выйти</button></aside>
-    <main><header><div className="mobile-title-row">{!employee&&<button className="mobile-menu" aria-label="Открыть меню" onClick={()=>setMenuOpen(true)}><Menu/></button>}<div><p>{employee?"РАБОЧЕЕ МЕСТО":"ЦЕНТР УПРАВЛЕНИЯ"}</p><h1>{titles[page]}</h1></div></div><div className="header-tools">{!employee&&<GlobalSearch onSelect={openSearch}/>} {!employee&&<Notifications compact onOpen={openTask}/>}<span className="avatar">{user.firstName[0]}{user.lastName[0]}</span><div><b>{user.firstName} {user.lastName}</b><small>{employee?"Сотрудник участка":"Планер"}</small></div><button className="mobile-logout" aria-label="Выйти" title="Выйти" onClick={onLogout}><LogOut/></button></div></header>{employee?<OperationsScreen/>:page==="integration"?<IntegrationMapping/>:page==="analytics"?<Analytics onOpenTask={openTask}/>:page==="staff"?<StaffScreen/>:page==="orders"?<OrdersScreen/>:page==="procurement"?<ProcurementScreen/>:page==="overview"?<Dashboard onOpenTask={openTask}/>:page==="launches"?<PlanningScreen onOpenCenter={openCenter} onOpenTemplates={()=>navigate("templates")}/>:page==="templates"?<RouteTemplates/>:page==="centers"?<OperationsScreen key={center} planner initialCenter={center} focusId={focus}/>:page==="problems"?<Notifications onOpen={openTask}/>:<div className="content"><EmptyPanel eyebrow="РАЗДЕЛ" title={titles[page]} icon={Factory} text="Раздел готовится"/></div>}</main>
-  </div>;
+    <aside><div className="logo"><span>К</span><b>LATUNING</b></div><nav>{nav("overview",Factory,employee?"Мой участок":"Обзор")}{employee&&<button className={page==="chat"?"active":""} onClick={()=>openChat()}><MessageCircle/> Чат{chatBadge}</button>}{!employee&&<>{nav("orders",ClipboardList,"Заказы")}{nav("procurement",PackageCheck,"Закупка")}{nav("launches",Boxes,"Запуски")}{nav("templates",RouteIcon,"Шаблоны")}{nav("centers",Factory,"Участки")}<button className={page==="chat"?"active":""} onClick={()=>openChat()}><MessageCircle/> Чат{chatBadge}</button>{nav("problems",AlertTriangle,"Уведомления")}{nav("staff",Factory,"Сотрудники")}{nav("analytics",Clock,"Аналитика")}{!viewOnly&&nav("integration",PackageCheck,"Настройки")}</>}</nav><button className="logout" onClick={onLogout}><LogOut/> Выйти</button></aside>
+    <main><header><div className="mobile-title-row">{!employee&&<button className="mobile-menu" aria-label="Открыть меню" onClick={()=>setMenuOpen(true)}><Menu/></button>}<div><p>{employee?"РАБОЧЕЕ МЕСТО":viewOnly?"ЦЕНТР УПРАВЛЕНИЯ · ТОЛЬКО ПРОСМОТР":"ЦЕНТР УПРАВЛЕНИЯ"}</p><h1>{titles[page]}</h1></div></div><div className="header-tools">{!employee&&<GlobalSearch onSelect={openSearch}/>} {!employee&&<Notifications compact onOpen={openTask}/>}<button type="button" className={`chat-button ${page==="chat"?"active":""}`} aria-label={page==="chat"&&employee?"Вернуться к участку":"Чат заказов"} title={page==="chat"&&employee?"Вернуться к участку":"Чат заказов"} onClick={()=>page==="chat"&&employee?navigate("overview"):openChat()}><MessageCircle/>{chatBadge}</button><ThemeToggle/><span className="avatar">{user.firstName[0]}{user.lastName[0]}</span><div><b>{user.firstName} {user.lastName}</b><small>{roleLabel(user.role)}</small></div><button className="mobile-logout" aria-label="Выйти" title="Выйти" onClick={onLogout}><LogOut/></button></div></header>{page==="chat"?<ChatScreen orderId={chatOrder} onOpen={openChat}/>:employee?<OperationsScreen onOpenChat={openChat}/>:page==="integration"?<IntegrationMapping/>:page==="analytics"?<Analytics onOpenTask={openTask}/>:page==="staff"?<StaffScreen/>:page==="orders"?<OrdersScreen onOpenChat={openChat}/>:page==="procurement"?<ProcurementScreen/>:page==="overview"?<Dashboard onOpenTask={openTask}/>:page==="launches"?<PlanningScreen onOpenCenter={openCenter} onOpenTemplates={()=>navigate("templates")}/>:page==="templates"?<RouteTemplates/>:page==="centers"?<OperationsScreen key={center} planner initialCenter={center} focusId={focus} onOpenChat={openChat}/>:page==="problems"?<Notifications onOpen={openTask}/>:<div className="content"><EmptyPanel eyebrow="РАЗДЕЛ" title={titles[page]} icon={Factory} text="Раздел готовится"/></div>}</main>
+  </div></ViewOnly.Provider>;
 }
 
 function App() { const [user,setUser]=useState<User|null>(null); const [loading,setLoading]=useState(true); useEffect(()=>{api<User>("/me").then(setUser).catch(()=>{}).finally(()=>setLoading(false));},[]); if(loading)return <div className="splash">LATUNING</div>; if(!user)return <Login onLogin={setUser}/>; return <Shell user={user} onLogout={async()=>{await api("/auth/logout",{method:"POST"});setUser(null);}}/>; }
 
 createRoot(document.getElementById("root")!).render(<App/>);
+registerServiceWorker();

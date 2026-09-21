@@ -11,10 +11,14 @@ import { z } from "zod";
 import { addWorkingDays, isDateOnly, parseDateOnly } from "./working-days.js";
 
 import { productionRouter } from "./production.js";
+import { chatRouter } from "./chat.js";
+import { createEventHub } from "./event-hub.js";
+import { intakeRouter, orderFilesRouter } from "./order-files.js";
 import { ProductionError } from "./production-rules.js";
 import { staffRouter } from "./staff.js";
 import { dashboardTotals } from "./dashboard.js";
 import { parseImportedOrders, previewOrderCsv } from "./order-csv.js";
+import { isReadOnlyViolation, seesEverything } from "./access.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -34,9 +38,11 @@ app.use(helmet());
 app.use(cors({ origin: webOrigin ?? "http://localhost:5173", credentials: true }));
 app.use("/api", (req, res, next) => {
   res.setHeader("Cache-Control", "no-store");
-  if (production && !["GET", "HEAD", "OPTIONS"].includes(req.method) && req.get("origin") !== webOrigin) return res.status(403).json({ message: "Недопустимый источник запроса" });
+  // приёмник 1С ходит не из браузера и без куки — его пускает ключ, а не источник запроса
+  if (production && !["GET", "HEAD", "OPTIONS"].includes(req.method) && req.path !== "/1c/files" && req.get("origin") !== webOrigin) return res.status(403).json({ message: "Недопустимый источник запроса" });
   next();
 });
+app.use("/api/1c", intakeRouter(prisma));
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
@@ -45,11 +51,13 @@ async function auth(req: Request, res: Response, next: NextFunction) {
     const token = jwt.verify(req.cookies.session ?? "", secret) as unknown as Session;
     const user = await prisma.user.findFirst({ where: { id: token.sub, active: true }, select: { id: true, role: true } });
     if (!user) return res.status(401).json({ message: "Требуется вход" });
+    if (isReadOnlyViolation(user.role, req.method, req.originalUrl.split("?")[0])) return res.status(403).json({ message: "У директора доступ только на просмотр" });
     req.session = { sub: user.id, role: user.role }; next();
   } catch { res.status(401).json({ message: "Требуется вход" }); }
 }
+// разделы Планера; директору они открыты на просмотр — изменения для него отсекает auth
 function planner(req: Request, res: Response, next: NextFunction) {
-  if (req.session?.role !== "PLANNER") return res.status(403).json({ message: "Недостаточно прав" });
+  if (!seesEverything(req.session?.role)) return res.status(403).json({ message: "Недостаточно прав" });
   next();
 }
 
@@ -69,7 +77,7 @@ app.get("/api/me",auth,async(req,res)=>{
   if(!user)return res.status(401).json({message:"Пользователь не найден"});res.json(user);
 });
 app.get("/api/work-centers",auth,async(req,res)=>{
-  if(req.session!.role==="PLANNER")return res.json(await prisma.workCenter.findMany({where:{active:true},orderBy:{name:"asc"}}));
+  if(seesEverything(req.session!.role))return res.json(await prisma.workCenter.findMany({where:{active:true},orderBy:{name:"asc"}}));
   const links=await prisma.userWorkCenter.findMany({where:{userId:req.session!.sub},select:{workCenter:true}});res.json(links.map(x=>x.workCenter));
 });
 app.get("/api/stop-reasons",auth,async(_req,res)=>res.json(await prisma.stopReasonCatalog.findMany({where:{active:true},orderBy:{name:"asc"}})));
@@ -83,7 +91,10 @@ app.put("/api/operation-statuses/:code",auth,planner,async(req,res)=>{const code
 const mappingInput=z.object({targetField:z.enum(["productionOrderNumber","customerOrderNumber","organization","dueDate","itemName","quantity","unitPrice"]),sourceField:z.string().trim().min(1).max(200),active:z.boolean()});
 app.get("/api/integrations/1c/mapping",auth,planner,async(_req,res)=>res.json(await prisma.integrationFieldMapping.findMany({where:{source:"1C"},orderBy:{targetField:"asc"}})));
 app.put("/api/integrations/1c/mapping",auth,planner,async(req,res)=>{const rows=z.array(mappingInput).max(7).parse(req.body);const unique=new Set(rows.map(row=>row.targetField));if(unique.size!==rows.length)return res.status(400).json({message:"Поле заказа нельзя сопоставить дважды"});await prisma.$transaction(async tx=>{await tx.integrationFieldMapping.deleteMany({where:{source:"1C"}});if(rows.length)await tx.integrationFieldMapping.createMany({data:rows.map(row=>({...row,source:"1C"}))});await tx.auditLog.create({data:{actorId:req.session!.sub,action:"INTEGRATION_MAPPING_UPDATED",entityType:"Integration",after:{source:"1C",fields:rows.map(row=>row.targetField)}}});});res.json(await prisma.integrationFieldMapping.findMany({where:{source:"1C"},orderBy:{targetField:"asc"}}));});
-app.use("/api", auth, productionRouter(prisma));
+const hub = createEventHub();
+app.use("/api/chat", auth, chatRouter(prisma, hub));
+app.use("/api", auth, orderFilesRouter(prisma));
+app.use("/api", auth, productionRouter(prisma, hub));
 app.get("/api/planner/dashboard",auth,planner,async(_req,res)=>{
   const [orders,stopped,problems]=await prisma.$transaction([
     prisma.order.findMany({where:{archivedAt:null},select:{id:true,productionOrderNumber:true,status:true,dueDate:true,procurement:{select:{status:true}},items:{select:{quantity:true,completedQuantity:true,unitPrice:true,launchItems:{select:{quantity:true}}}}}}),
@@ -419,7 +430,13 @@ app.patch("/api/procurement/:id", auth, planner, async (req, res) => {
 app.use("/api", (_req, res) => { res.status(404).json({ message: "Не найдено" }); });
 if (production) {
   const frontend = path.resolve(process.cwd(), "apps/web/dist");
-  app.use(express.static(frontend, { dotfiles: "deny" }));
+  // привязка Android-приложения к сайту: без неё приложение показывает адресную строку. Папки с точкой статика не отдаёт, поэтому отдельный маршрут.
+  app.get("/.well-known/assetlinks.json", (_req, res) => res.type("application/json").sendFile(path.join(frontend, "assetlinks.json")));
+  app.use(express.static(frontend, { dotfiles: "deny", setHeaders(res, file) {
+    // сервис-воркер и манифест браузер должен перечитывать, иначе приложение застрянет на старой версии
+    if (/[\\/](sw\.js|manifest\.webmanifest|offline\.html)$/.test(file)) res.setHeader("Cache-Control", "no-cache");
+    if (file.endsWith(".apk")) { res.setHeader("Content-Type", "application/vnd.android.package-archive"); res.setHeader("Content-Disposition", 'attachment; filename="latuning-crm.apk"'); }
+  } }));
   app.use((req, res, next) => {
     if (!["GET", "HEAD"].includes(req.method) || req.path.split("/").some(part => part.startsWith(".")) || path.extname(req.path)) return next();
     res.sendFile(path.join(frontend, "index.html"));
@@ -431,5 +448,5 @@ app.use((error:unknown,_req:Request,res:Response,_next:NextFunction)=>{
   if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2002", "P2034"].includes(error.code)) return res.status(409).json({ message: "Данные уже изменены или номер занят. Обновите страницу и повторите действие" });
   console.error("Request failed", error instanceof Error ? error.name : "UnknownError"); res.status(500).json({message:"Внутренняя ошибка сервера"});
 });
-const server = app.listen(Number(process.env.PORT ?? process.env.API_PORT ?? 3000), "0.0.0.0", () => console.log("Application ready"));
+const server = app.listen(Number(process.env.PORT ?? process.env.API_PORT ?? 3000), process.env.HOST ?? "0.0.0.0", () => console.log("Application ready"));
 process.on("SIGTERM", () => { server.close(() => { void prisma.$disconnect().finally(() => process.exit(0)); }); setTimeout(() => process.exit(1), 10000).unref(); });

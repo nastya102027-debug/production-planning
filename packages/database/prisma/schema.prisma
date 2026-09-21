@@ -10,6 +10,7 @@ datasource db {
 enum UserRole {
   PLANNER
   EMPLOYEE
+  DIRECTOR
 }
 
 enum OrderStatus {
@@ -66,6 +67,10 @@ model User {
   responsibleProcurements Procurement[]
   assignedOperations Operation[]
   routeTemplates RouteTemplate[]
+  chatMessages ChatMessage[]
+  chatFiles ChatFile[]
+  chatMentions ChatMention[]
+  chatReads ChatRead[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -110,6 +115,8 @@ model Order {
   items OrderItem[]
   procurement Procurement?
   launches ProductionLaunch[]
+  chatMessages ChatMessage[]
+  chatReads ChatRead[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([status, dueDate])
@@ -389,4 +396,73 @@ model OperationStatusCatalog {
   name String
   color String @default("#687780")
   updatedAt DateTime @updatedAt
+}
+
+// Чат заказа: одна переписка на заказ. seq — сквозной порядковый номер, по нему считается непрочитанное.
+model ChatMessage {
+  id String @id @default(uuid())
+  seq Int @unique @default(autoincrement())
+  orderId String
+  authorId String
+  text String
+  createdAt DateTime @default(now())
+  order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
+  author User @relation(fields:[authorId], references:[id])
+  files ChatFile[]
+  mentions ChatMention[]
+  @@index([orderId, seq])
+}
+
+// Вложение: сам файл лежит в CHAT_DIR под сгенерированным именем stored; name — только показать человеку.
+// messageId пуст, пока файл загружен, но сообщение ещё не отправлено.
+model ChatFile {
+  id String @id @default(uuid())
+  messageId String?
+  uploaderId String
+  stored String @unique
+  name String
+  mime String
+  size Int
+  createdAt DateTime @default(now())
+  message ChatMessage? @relation(fields:[messageId], references:[id], onDelete:Cascade)
+  uploader User @relation(fields:[uploaderId], references:[id])
+  @@index([messageId])
+  @@index([createdAt])
+}
+
+// Пинг: @логин в сообщении; висит, пока адресат не открыл переписку
+model ChatMention {
+  messageId String
+  userId String
+  seenAt DateTime?
+  message ChatMessage @relation(fields:[messageId], references:[id], onDelete:Cascade)
+  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  @@id([messageId, userId])
+  @@index([userId, seenAt])
+}
+
+// До какого сообщения человек дочитал переписку
+model ChatRead {
+  userId String
+  orderId String
+  lastSeq Int @default(0)
+  updatedAt DateTime @updatedAt
+  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
+  @@id([userId, orderId])
+}
+
+// Файл заказа, присланный из 1С. Привязан к номеру сделки, а не к заказу: файл может прийти раньше, чем заказ заведут.
+model OrderFile {
+  id String @id @default(uuid())
+  dealNumber String
+  stored String @unique
+  name String
+  mime String
+  size Int
+  sha256 String
+  source String @default("1C")
+  createdAt DateTime @default(now())
+  @@unique([dealNumber, sha256])
+  @@index([dealNumber, createdAt])
 }
