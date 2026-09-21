@@ -133,7 +133,7 @@ export function productionRouter(prisma: PrismaClient, hub: EventHub) {
         const operationByStep = new Map<string, string>();
         const savedPlan=remainingPlanInput.safeParse(item.remainingPlan);
         for (const step of route.steps) {
-          const operation = await tx.operation.create({ data: { launchItemId: launchItem.id, normHours:savedPlan.success&&savedPlan.data.routeId===route.id?(savedPlan.data.steps.find(s=>s.stepId===step.id)?.hoursPerUnit??0)*requested.quantity||null:null, workCenterId: step.workCenterId, title: step.title || step.workCenter.name, quantity: requested.quantity, priority: input.priority, dueDate: input.plannedFinish ? new Date(input.plannedFinish) : order.dueDate, comment: item.comment,
+          const operation = await tx.operation.create({ data: { launchItemId: launchItem.id, normHours:savedPlan.success&&savedPlan.data.routeId===route.id?(savedPlan.data.steps.find(s=>s.stepId===step.id)?.hoursPerUnit??0)*requested.quantity||null:null, hourlyRate:step.workCenter.hourlyRate, workCenterId: step.workCenterId, title: step.title || step.workCenter.name, quantity: requested.quantity, priority: input.priority, dueDate: input.plannedFinish ? new Date(input.plannedFinish) : order.dueDate, comment: item.comment,
             statusHistory: { create: { changedById: req.session!.sub, toStatus: "QUEUED" } } } });
           operationByStep.set(step.id, operation.id);
         }
@@ -342,7 +342,7 @@ export function productionRouter(prisma: PrismaClient, hub: EventHub) {
         const status = nextStatus(current.status, input.action, blockedBy.length>0, input.reason, overrideAllowed) as OperationStatus;
         await tx.operationTimeEntry.updateMany({ where: { operationId, finishedAt: null }, data: { finishedAt: now } });
         if (status === "IN_PROGRESS") await tx.operationTimeEntry.create({ data: { operationId, userId, startedAt: now } });
-        await tx.operation.update({ where: { id: operationId }, data: { status, stopReason: status === "PAUSED" ? note : null, ...(status === "COMPLETED" ? { completedQuantity: current.quantity } : {}) } });
+        await tx.operation.update({ where: { id: operationId }, data: { status, stopReason: status === "PAUSED" ? note : null, ...(status === "IN_PROGRESS"&&current.hourlyRate===null?{hourlyRate:current.workCenter.hourlyRate}:{}), ...(status === "COMPLETED" ? { completedQuantity: current.quantity } : {}) } });
         await tx.operationStatusHistory.create({ data: { operationId, changedById: userId, fromStatus: current.status, toStatus: status, reason: note || null, changedAt: now } });
         if (status === "COMPLETED") {
           const itemId = current.launchItem.orderItem.id;
