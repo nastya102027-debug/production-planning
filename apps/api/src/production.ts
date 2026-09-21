@@ -22,7 +22,7 @@ const launchInput = z.object({
   items: z.array(z.object({ orderItemId: z.string().uuid(), routeId: z.string().uuid(), quantity: z.number().int().positive() })).min(1).max(200)
 });
 const routeInclude = { steps: { include: { workCenter: true, predecessors: true }, orderBy: { position: "asc" as const } } };
-const templateInclude = { author: { select: { id: true, firstName: true, lastName: true } }, steps: { include: { workCenter: true, predecessors: true }, orderBy: { position: "asc" as const } } };
+const templateInclude = { author: { select: { id: true, firstName: true, lastName: true } }, steps: { include: { workCenter: true, predecessors: true }, orderBy: { position: "asc" as const } }, _count: { select: { appliedRoutes: true } } };
 const launchInclude = { order: true, items: { include: { orderItem: true, route: { include: routeInclude }, operations: { include: { workCenter: true, predecessors: { include: { predecessor: { select: { id: true, status: true } } } } } } } } };
 const operationInclude = {
   assignee: { select: { id: true, firstName: true, lastName: true, active: true } },
