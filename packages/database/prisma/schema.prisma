@@ -69,6 +69,7 @@ model User {
   routeTemplates RouteTemplate[]
   chatMessages ChatMessage[]
   chatFiles ChatFile[]
+  uploadedRkdFiles RkdFile[]
   chatMentions ChatMention[]
   chatReads ChatRead[]
   createdAt DateTime @default(now())
@@ -117,6 +118,7 @@ model Order {
   launches ProductionLaunch[]
   chatMessages ChatMessage[]
   chatReads ChatRead[]
+  rkdFiles RkdFile[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([status, dueDate])
@@ -465,4 +467,23 @@ model OrderFile {
   createdAt DateTime @default(now())
   @@unique([dealNumber, sha256])
   @@index([dealNumber, createdAt])
+}
+
+// РКД, загруженная Планером прямо в заказ. Данные лежат в PostgreSQL, чтобы
+// не зависеть от временного диска веб-сервиса.
+model RkdFile {
+  id String @id @default(uuid())
+  orderId String
+  uploaderId String
+  name String
+  mime String
+  size Int
+  sha256 String
+  data Bytes
+  createdAt DateTime @default(now())
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  uploader User @relation(fields: [uploaderId], references: [id])
+  @@unique([orderId, sha256])
+  @@index([orderId, createdAt])
+  @@index([uploaderId])
 }
