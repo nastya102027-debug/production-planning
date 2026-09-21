@@ -46,11 +46,11 @@ const money = (value:number) => new Intl.NumberFormat("ru-RU", { style:"currency
 const statusLabel:Record<string,string> = { DRAFT:"Черновик", PROCUREMENT:"В закупке", READY_FOR_LAUNCH:"Готов к запуску", IN_PRODUCTION:"В производстве", PARTIALLY_READY:"Частично готов", COMPLETED:"Готов" };
 const priorityLabel:Record<string,string> = { LOW:"Низкий", NORMAL:"Обычный", HIGH:"Высокий", CRITICAL:"Критический" };
 const organizationOptions:{value:Organization;label:string}[] = [
-  {value:"IP_VETROV",label:"ИП Ветров Латунинг Эконитрид"},
+  {value:"IP_VETROV",label:"ИП Ветров"},
   {value:"LATUNING",label:"Латунинг"},
   {value:"ECONTRID",label:"Эконтрид"}
 ];
-const organizationLabel:Record<Organization,string> = {IP_VETROV:"ИП Ветров Латунинг Эконитрид",LATUNING:"Латунинг",ECONTRID:"Эконтрид"};
+const organizationLabel:Record<Organization,string> = {IP_VETROV:"ИП Ветров",LATUNING:"Латунинг",ECONTRID:"Эконтрид"};
 
 function calculateDueDate(startValue:string, workingDaysValue:number|string):string {
   const workingDays=Number(workingDaysValue);
