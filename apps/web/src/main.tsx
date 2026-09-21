@@ -68,6 +68,13 @@ function displayDate(value?:string):string {
   return date.toLocaleDateString("ru-RU");
 }
 
+type Confirmation = { title:string; text:string; action:string; danger?:boolean; run:()=>Promise<void> };
+function ConfirmationDialog({confirmation,onClose}:{confirmation:Confirmation;onClose:()=>void}) {
+  const [busy,setBusy]=useState(false);
+  async function confirm(){setBusy(true);try{await confirmation.run();onClose();}finally{setBusy(false);}}
+  return <div className="modal-backdrop confirmation-backdrop" onClick={event=>{if(event.target===event.currentTarget&&!busy)onClose();}}><section className="confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="confirmation-title"><div className="confirmation-mark"><AlertTriangle/></div><div><p className="kicker">ПОДТВЕРЖДЕНИЕ</p><h2 id="confirmation-title">{confirmation.title}</h2><p>{confirmation.text}</p></div><footer><button type="button" className="secondary" disabled={busy} onClick={onClose}>Отмена</button><button type="button" className={confirmation.danger?"danger":"primary"} disabled={busy} onClick={()=>void confirm()}>{busy?"Выполняю…":confirmation.action}</button></footer></section></div>;
+}
+
 function Login({onLogin}:{onLogin:(user:User)=>void}) {
   const [login,setLogin]=useState(""); const [password,setPassword]=useState(""); const [error,setError]=useState("");
   async function submit(event:React.FormEvent) { event.preventDefault(); setError(""); try { await api("/auth/login",{method:"POST",body:JSON.stringify({login,password})}); onLogin(await api<User>("/me")); } catch(error) { setError(error instanceof Error?error.message:"Ошибка входа"); } }
@@ -172,9 +179,9 @@ function OrdersScreen({onOpenChat}:{onOpenChat:(orderId:string)=>void}) {
   const [forecastOrder,setForecastOrder]=useState<Order|null>(null);
   const [filesOrder,setFilesOrder]=useState<Order|null>(null);
   const [clearing,setClearing]=useState(false),[importBusy,setImportBusy]=useState(false),[notice,setNotice]=useState(""); const importInput=useRef<HTMLInputElement>(null);
-  const [orders,setOrders]=useState<Order[]>([]); const [loading,setLoading]=useState(true); const [search,setSearch]=useState(""); const [showForm,setShowForm]=useState(false); const [editing,setEditing]=useState<Order>(); const [archived,setArchived]=useState(false); const [error,setError]=useState("");
+  const [orders,setOrders]=useState<Order[]>([]); const [loading,setLoading]=useState(true); const [search,setSearch]=useState(""); const [showForm,setShowForm]=useState(false); const [editing,setEditing]=useState<Order>(); const [archived,setArchived]=useState(false); const [error,setError]=useState(""); const [confirmation,setConfirmation]=useState<Confirmation|null>(null);
   const load=()=>{setLoading(true);return api<Order[]>(`/orders?archived=${archived}&search=${encodeURIComponent(search)}`).then(setOrders).catch(e=>setError(e.message)).finally(()=>setLoading(false));};
-  async function archive(order:Order){if(!window.confirm(archived?"Вернуть заказ в работу?":"Переместить заказ в архив? Существующие производственные задачи продолжат выполняться."))return;try{await api(`/orders/${order.id}/archive`,{method:"PATCH",body:JSON.stringify({archived:!archived,updatedAt:order.updatedAt})});await load();}catch(e){setError(e instanceof Error?e.message:"Ошибка сохранения");}}
+  function archive(order:Order){setConfirmation({title:archived?"Вернуть заказ в работу?":"Переместить заказ в архив?",text:archived?"Заказ снова появится в активном списке.":"Производственные задачи и история сохранятся. Заказ можно будет восстановить из архива.",action:archived?"Восстановить":"Переместить в архив",danger:!archived,run:async()=>{try{await api(`/orders/${order.id}/archive`,{method:"PATCH",body:JSON.stringify({archived:!archived,updatedAt:order.updatedAt})});await load();}catch(e){setError(e instanceof Error?e.message:"Ошибка сохранения");}}});}
   async function clearArchive(order?:Order){
     if(clearing||!window.confirm(order?`Очистить запись «Производство № ${order.productionOrderNumber}»? Она исчезнет из архива, восстановление из списка станет недоступно. Производственные задачи и история сохранятся.`:"Очистить весь архив, включая записи вне текущего поиска? Восстановление из списка станет недоступно. Производственные задачи и история сохранятся."))return;
     setClearing(true);setError("");setNotice("");try{const result=await api<{count:number}>("/archive/clear",{method:"POST",body:JSON.stringify(order?{id:order.id,updatedAt:order.updatedAt}:{all:true})});setNotice(`Очищено записей: ${result.count}`);await load();}catch(e){setError((e as Error).message);}finally{setClearing(false);}
@@ -194,7 +201,7 @@ function OrdersScreen({onOpenChat}:{onOpenChat:(orderId:string)=>void}) {
         <span>{order.items.length}</span><span>{money(order.completedTotal)}</span><span><b>{money(order.total)}</b>{!archived&&<button className="secondary" onClick={()=>{setEditing(order);setShowForm(true);}}>{viewOnly?"Открыть":"Изменить"}</button>}{!archived&&<button className="secondary" onClick={()=>setForecastOrder(order)}>Прогноз</button>}<button className="secondary" onClick={()=>setFilesOrder(order)}>Файлы</button><button className="secondary" onClick={()=>onOpenChat(order.id)}>Чат</button><button data-edit className="secondary" disabled={clearing} onClick={()=>void archive(order)}>{archived?"Восстановить":"В архив"}</button>{archived&&<button data-edit className="secondary" disabled={clearing} onClick={()=>void clearArchive(order)}>Очистить</button>}</span>
       </div>)}
     </div>
-    {filesOrder&&<OrderFilesDialog orderId={filesOrder.id} title={`Заказ № ${filesOrder.productionOrderNumber}`} onClose={()=>setFilesOrder(null)}/>}{forecastOrder&&<div className="modal-backdrop"><section className="task-dialog" role="dialog" aria-modal="true" aria-label="Прогноз заказа"><header><h2>Заказ № {forecastOrder.productionOrderNumber}</h2><button aria-label="Закрыть прогноз" onClick={()=>{setForecastOrder(null);void load();}}>×</button></header><OrderForecast id={forecastOrder.id}/></section></div>}
+    {confirmation&&<ConfirmationDialog confirmation={confirmation} onClose={()=>setConfirmation(null)}/>}{filesOrder&&<OrderFilesDialog orderId={filesOrder.id} title={`Заказ № ${filesOrder.productionOrderNumber}`} onClose={()=>setFilesOrder(null)}/>}{forecastOrder&&<div className="modal-backdrop"><section className="task-dialog" role="dialog" aria-modal="true" aria-label="Прогноз заказа"><header><h2>Заказ № {forecastOrder.productionOrderNumber}</h2><button aria-label="Закрыть прогноз" onClick={()=>{setForecastOrder(null);void load();}}>×</button></header><OrderForecast id={forecastOrder.id}/></section></div>}
     {showForm&&<OrderForm existing={editing} onClose={()=>setShowForm(false)} onCreated={()=>{setShowForm(false);void load();}}/>}
   </div>;
 }
