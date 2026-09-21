@@ -13,9 +13,15 @@ const defaultLabels: Record<string, string> = { QUEUED: "К запуску", IN_
 const defaultColors: Record<string,string> = { QUEUED:"#7195b3", IN_PROGRESS:"#3f8062", PAUSED:"#bc7939", COMPLETED:"#596a60", CANCELLED:"#9b5a5a" };
 const priorities: Record<string, string> = { LOW: "Низкий", NORMAL: "Обычный", HIGH: "Высокий", CRITICAL: "Критический" };
 const workCenterTone:Record<string,string>={"Лазер":"laser","Гибка":"bending","Малярка Порошок":"powder","Нитрид":"nitride","Гильотина":"cutting","Пила":"saw","Шлиф станок":"grinding","Шлифовка ручная":"grinding","Сварка":"welding","Слесарка":"metalwork","Фрезер ЧПУ":"milling","Токарка ЧПУ":"milling","Фрезер ручной":"milling","Малярка":"painting","Патина":"patina","ОТК":"quality"};
+const contractorCenters=new Set(["Лазер","Гибка","Нитрид","Малярка Порошок"]);
 const date = (value?: string) => value ? new Date(value).toLocaleDateString("ru-RU") : "—";
 const dateTime = (value?: string) => value ? new Date(value).toLocaleString("ru-RU",{dateStyle:"short",timeStyle:"short"}) : "—";
 const duration = (seconds: number) => `${Math.floor(seconds / 3600)} ч ${Math.floor(seconds % 3600 / 60)} мин ${Math.floor(seconds % 60)} с`;
+function nextHandoff(task:Operation){
+  if(contractorCenters.has(task.workCenter.name))return [];
+  const direct=task.routeOperations.filter(stage=>stage.predecessorIds.includes(task.id)&&stage.status!=="CANCELLED");
+  return [...new Set(direct.map(stage=>stage.workCenter).filter(center=>center!==task.workCenter.name))];
+}
 
 function TaskCard({ task, onAction, onOpen, now, labels, canCancel = false }: { task: Operation; onAction: (task: Operation, action: string) => void; onOpen: () => void; now: number; labels:Record<string,string>; canCancel?: boolean }) {
   const blocked = task.predecessors.some(step => step.status !== "COMPLETED");
@@ -88,7 +94,7 @@ export function OperationsScreen({ planner = false, initialCenter = "", focusId 
   const [data, setData] = useState<{ items: Operation[]; total: number; counts: Record<string, number> }>({ items: [], total: 0, counts: {} });
   const [summary,setSummary]=useState<{counts:Record<string,number>;completedToday:number}>({counts:{},completedToday:0});
   const [error, setError] = useState(""), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
-  const [modal, setModal] = useState<{ task: Operation; action: string } | null>(null), [opened, setOpened] = useState<Operation | null>(null);
+  const [modal, setModal] = useState<{ task: Operation; action: string } | null>(null), [opened, setOpened] = useState<Operation | null>(null), [handoff,setHandoff]=useState<{itemName:string;centers:string[]} | null>(null);
   const [reason, setReason] = useState(""), [comment, setComment] = useState(""), [now, setNow] = useState(Date.now());
   const [stopReasons,setStopReasons]=useState<{id:string;name:string}[]>([]);
   const [labels,setLabels]=useState(defaultLabels);
@@ -123,7 +129,7 @@ export function OperationsScreen({ planner = false, initialCenter = "", focusId 
   async function submit() {
     if (!modal || saving) return;
     setSaving(true); setError("");
-    try { await api(`/operations/${modal.task.id}/actions`, { method: "POST", body: JSON.stringify({ action: modal.action, reason, comment }) }); setModal(null); setRefresh(value => value + 1); }
+    try { const handoff=modal.action==="complete"?nextHandoff(modal.task):[]; await api(`/operations/${modal.task.id}/actions`, { method: "POST", body: JSON.stringify({ action: modal.action, reason, comment }) }); setModal(null); if(handoff.length)setHandoff({itemName:modal.task.itemName,centers:handoff}); setRefresh(value => value + 1); }
     catch (error) { setError(error instanceof Error ? error.message : "Не удалось изменить задачу"); } finally { setSaving(false); }
   }
   const actionLabels: Record<string, string> = { start: "Начать работу", pause: "Остановить работу", resume: "Продолжить работу", complete: "Завершить работу", cancel: "Отменить операцию", comment: "Добавить комментарий", problem: "Сообщить о проблеме" };
@@ -140,6 +146,7 @@ export function OperationsScreen({ planner = false, initialCenter = "", focusId 
     {opened && <div className="modal-backdrop"><section className="task-dialog" role="dialog" aria-modal="true" aria-label="Карточка задачи"><header><h2>{opened.itemName}</h2><button aria-label="Закрыть карточку" onClick={() => setOpened(null)}><X/></button></header><p>Заказ № {opened.orderNumber} · запуск № {opened.launchNumber}</p>{onOpenChat&&opened.orderId&&<button type="button" className="secondary task-chat" onClick={()=>onOpenChat(opened.orderId!)}><MessageSquare/>Чат заказа</button>}{opened.orderId&&<OrderFiles orderId={opened.orderId}/>}<TaskCard task={opened} onAction={action} onOpen={() => {}} now={now} labels={labels} canCancel={planner}/>{opened.comment && <p>{opened.comment}</p>}{planner&&!["COMPLETED","CANCELLED"].includes(opened.status)&&<button className="primary" onClick={()=>setPlanning(opened)}>Сроки и очередь</button>}{planner&&<TaskForecast centerId={opened.workCenter.id} id={opened.id} version={opened.planVersion} revision={revision}/>}<h3>История</h3><ol className="task-history">{opened.history.map(event => <li key={event.id}><time>{new Date(event.at).toLocaleString("ru-RU")}</time><b>{labels[event.status]||event.status} · {event.actor}</b>{event.reason && <span>{event.reason}</span>}</li>)}</ol></section></div>}
     {planning&&<TaskPlan task={planning} onClose={()=>setPlanning(null)} onSaved={task=>{setOpened(task);setPlanning(null);setRefresh(v=>v+1);}}/>}
     {modal && <div className="modal-backdrop action-backdrop"><form className="task-dialog" role="dialog" aria-modal="true" aria-label={actionLabels[modal.action]} onSubmit={event => { event.preventDefault(); submit(); }}><header><h2>{actionLabels[modal.action]}</h2><button type="button" aria-label="Закрыть действие" disabled={saving} onClick={() => setModal(null)}><X/></button></header><p>{modal.task.itemName} · {modal.task.quantity} шт.</p>{["pause", "cancel"].includes(modal.action) && <label>{modal.action === "cancel" ? "Причина отмены" : "Причина остановки"}{stopReasons.length?<select autoFocus required value={reason} onChange={event=>setReason(event.target.value)}><option value="">Выберите причину</option>{stopReasons.map(item=><option key={item.id} value={item.name}>{item.name}</option>)}<option value="Другая причина">Другая причина</option></select>:<input autoFocus required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)}/>}</label>}{reason==="Другая причина"&&<label>Укажите причину<input required maxLength={1000} onChange={event=>setReason(event.target.value)}/></label>}{["pause", "comment", "problem"].includes(modal.action) && <label>Комментарий<textarea required={modal.action !== "pause"} maxLength={2000} value={comment} onChange={event => setComment(event.target.value)}/></label>}{error && <div role="alert" className="planning-error">{error}</div>}<footer><button type="button" className="secondary" disabled={saving} onClick={() => setModal(null)}>Отмена</button><button className="primary" disabled={saving}>{saving ? "Сохраняю…" : actionLabels[modal.action]}</button></footer></form></div>}
+    {handoff&&<div className="modal-backdrop handoff-backdrop"><section className="handoff-dialog" role="dialog" aria-modal="true" aria-label="Передача изделия на следующий участок"><div className="handoff-mark"><Factory/></div><div><small>ПОСЛЕ ЗАВЕРШЕНИЯ</small><h2>Не забудьте передать заказ</h2><p>Позиция «{handoff.itemName}» должна быть передана на участок{handoff.centers.length>1?"и":""}: <b>{handoff.centers.join(", ")}</b>.</p></div><footer><button className="primary" autoFocus onClick={()=>setHandoff(null)}>Понятно</button></footer></section></div>}
   </div>;
 }
 
