@@ -20,5 +20,8 @@ export function InstallApp() {
 
 // Сервис-воркер нужен только ради страницы «нет связи»; в разработке он мешал бы Vite.
 export function registerServiceWorker() {
-  if (import.meta.env.PROD && "serviceWorker" in navigator) window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => {}); });
+  if (import.meta.env.PROD && "serviceWorker" in navigator) window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker.addEventListener("message", event => { if (event.data?.type === "notification-click" && typeof event.data.href === "string") window.location.hash = event.data.href; });
+  });
 }
