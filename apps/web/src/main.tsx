@@ -92,7 +92,7 @@ function OrderForm({onClose,onCreated,existing}:{onClose:()=>void;onCreated:(ord
   const [productionLeadDays,setProductionLeadDays]=useState<number|"">(existing?.productionLeadDays??"");
   const [priority,setPriority]=useState(existing?.priority??"NORMAL");
   const [error,setError]=useState("");
-  const [items,setItems]=useState<DraftItem[]>(existing?.items.map(i=>({id:i.id,updatedAt:i.updatedAt,name:i.name,quantity:i.quantity,unitPrice:i.unitPrice,comment:i.comment}))??[{name:"",quantity:"",unitPrice:""}]);
+  const [items,setItems]=useState<DraftItem[]>(existing?.items.map(i=>({id:i.id,updatedAt:i.updatedAt,name:i.name,quantity:i.quantity,unitPrice:i.unitPrice,comment:i.comment??undefined}))??[{name:"",quantity:"",unitPrice:""}]);
   const [updatedAt,setUpdatedAt]=useState(existing?.updatedAt??"");
   const [archivedItems,setArchivedItems]=useState<OrderItem[]>([]);
   const total=items.reduce((sum,item)=>sum+(Number(item.quantity)||0)*(Number(item.unitPrice)||0),0);
@@ -102,7 +102,7 @@ function OrderForm({onClose,onCreated,existing}:{onClose:()=>void;onCreated:(ord
     if(!existing)return;
     const order=await api<Order>(`/orders/${existing.id}?items=all`);
     setUpdatedAt(order.updatedAt);
-    setItems(order.items.filter(item=>!item.archivedAt).map(item=>({id:item.id,updatedAt:item.updatedAt,name:item.name,quantity:item.quantity,unitPrice:item.unitPrice,comment:item.comment})));
+    setItems(order.items.filter(item=>!item.archivedAt).map(item=>({id:item.id,updatedAt:item.updatedAt,name:item.name,quantity:item.quantity,unitPrice:item.unitPrice,comment:item.comment??undefined})));
     setArchivedItems(order.items.filter(item=>item.archivedAt));
   }
   useEffect(()=>{void loadItems().catch(error=>setError(error instanceof Error?error.message:"Не удалось загрузить позиции"));},[existing?.id]);
@@ -140,11 +140,13 @@ function OrderForm({onClose,onCreated,existing}:{onClose:()=>void;onCreated:(ord
         <label>Заказ покупателя №<input value={customerOrderNumber} onChange={e=>setCustomerOrderNumber(e.target.value)}/></label>
         <label>Приоритет<select value={priority} onChange={e=>setPriority(e.target.value)}><option value="LOW">Низкий</option><option value="NORMAL">Обычный</option><option value="HIGH">Высокий</option><option value="CRITICAL">Критический</option></select></label>
       </div>
-      <label className="organization-select">Организация
-        <select value={organization} onChange={e=>setOrganization(e.target.value as Organization)} required>
-          {organizationOptions.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
-      </label>
+      <section className="organization-picker" aria-label="Организация">
+        <h3>Организация</h3>
+        <div>{organizationOptions.map(option=><label className={`organization-option org-${option.value.toLowerCase()} ${organization===option.value?"selected":""}`} key={option.value}>
+          <input type="radio" name="organization" value={option.value} checked={organization===option.value} onChange={()=>setOrganization(option.value)} required/>
+          <i/><span><b>{option.label}</b></span><em>✓</em>
+        </label>)}</div>
+      </section>
       <div className="form-grid schedule-grid">
         <label>Дата согласования чертежей<input type="date" value={drawingApprovalDate} onChange={e=>setDrawingApprovalDate(e.target.value)} required/></label>
         <label>Срок производства, рабочих дней<input type="number" min="1" max="3650" value={productionLeadDays} onChange={e=>setProductionLeadDays(e.target.value?Number(e.target.value):"")} placeholder="Например, 10" required/></label>
