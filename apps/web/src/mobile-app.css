@@ -63,6 +63,12 @@
   .employee-shell .stage-status{padding:6px 8px;font-size:11px}
   .employee-shell .position-route{gap:5px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}
   .employee-shell .position-route span{flex:0 0 auto;padding:5px 7px;font-size:11px}
+  .employee-shell .position-full-route{gap:8px;padding-top:12px}
+  .employee-shell .position-full-route h4{font-size:11px}
+  .employee-shell .position-full-route>div{flex-wrap:nowrap;overflow-x:auto;padding-bottom:3px}
+  .employee-shell .position-full-route span{flex:0 0 126px;min-height:53px;padding:8px 9px;border-radius:8px}
+  .employee-shell .position-full-route span b{font-size:12px}
+  .employee-shell .position-full-route span small{font-size:11px}
   .position-open{display:block;width:100%;min-height:46px;border:1px solid #8c713f;border-radius:9px;background:#a98649;color:#fff;font-size:15px;font-weight:800}
 
   /* Task details act like a native bottom sheet with thumb-friendly actions. */
