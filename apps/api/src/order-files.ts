@@ -11,6 +11,8 @@ import { CALCULATOR_FILES, dealNumbers, isCalculatorFileKind, isDealNumber, same
 import { ProductionError } from "./production-rules.js";
 
 const MAX_INTAKE_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_RKD_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_RKD_FILES_PER_ORDER = 50;
 const orderFilesDir = () => path.resolve(process.env.ORDER_FILES_DIR ?? path.join(process.cwd(), "data/order-files"));
 const isFile = (location: string) => fs.stat(location).then(stat => stat.isFile() ? stat : null, () => null);
 
@@ -25,6 +27,11 @@ function sendStored(res: Response, location: string, name: string, mime: string)
 export function orderFilesRouter(prisma: PrismaClient) {
   const router = Router();
   const drawingsDir = process.env.DRAWINGS_DIR ? path.resolve(process.env.DRAWINGS_DIR) : null;
+  const rawRkd = express.raw({ type: () => true, limit: MAX_RKD_FILE_BYTES });
+  const readRkd = (req: Request, res: Response, next: NextFunction) => rawRkd(req, res, (error?: unknown) => {
+    if (!error) return next();
+    next(new ProductionError(400, (error as { type?: string }).type === "entity.too.large" ? "Файл РКД больше 25 МБ" : "Файл РКД не удалось загрузить"));
+  });
 
   async function requireOrder(req: Request) {
     const order = await prisma.order.findFirst({ where: { AND: [{ id: z.string().uuid().parse(req.params.id) }, await orderAccessWhere(prisma, req.session!)] }, select: { id: true, productionOrderNumber: true, customerOrderNumber: true } });
@@ -34,7 +41,9 @@ export function orderFilesRouter(prisma: PrismaClient) {
 
   router.get("/orders/:id/files", async (req, res) => {
     const order = await requireOrder(req), base = `/api/orders/${order.id}/files`;
-    const files: { id: string; source: "calculator" | "1c" | "chat"; title: string; name: string; mime: string; size: number; url: string; createdAt: string }[] = [];
+    const files: { id: string; source: "rkd" | "calculator" | "1c" | "chat"; title: string; name: string; mime: string; size: number; url: string; createdAt: string }[] = [];
+    for (const file of await prisma.rkdFile.findMany({ where: { orderId: order.id }, orderBy: { createdAt: "desc" }, take: MAX_RKD_FILES_PER_ORDER }))
+      files.push({ id: file.id, source: "rkd", title: file.name, name: file.name, mime: file.mime, size: file.size, url: `${base}/rkd/${file.id}`, createdAt: file.createdAt.toISOString() });
     if (drawingsDir) for (const deal of order.deals) for (const [kind, rule] of Object.entries(CALCULATOR_FILES)) {
       const name = rule.pattern(deal), stat = await isFile(path.join(drawingsDir, name));
       if (stat) files.push({ id: `calculator-${deal}-${kind}`, source: "calculator", title: order.deals.length > 1 ? `${rule.title} · ${deal}` : rule.title, name, mime: "application/pdf", size: stat.size, url: `${base}/calculator/${deal}/${kind}`, createdAt: stat.mtime.toISOString() });
@@ -43,7 +52,40 @@ export function orderFilesRouter(prisma: PrismaClient) {
       files.push({ id: file.id, source: "1c", title: file.name, name: file.name, mime: file.mime, size: file.size, url: `${base}/1c/${file.id}`, createdAt: file.createdAt.toISOString() });
     for (const file of await prisma.chatFile.findMany({ where: { message: { orderId: order.id } }, orderBy: { createdAt: "desc" }, take: 100 }))
       files.push({ id: file.id, source: "chat", title: file.name, name: file.name, mime: file.mime, size: file.size, url: `/api/chat/files/${file.id}`, createdAt: file.createdAt.toISOString() });
-    res.json({ files });
+    res.json({ files, canUploadRkd: req.session?.role === "PLANNER" });
+  });
+
+  // РКД сохраняется в PostgreSQL: в Render она не пропадёт при новом развёртывании.
+  router.post("/orders/:id/rkd", readRkd, async (req, res) => {
+    if (req.session?.role !== "PLANNER") throw new ProductionError(403, "Загружать РКД может только Планер");
+    const order = await requireOrder(req), name = safeFileName(req.query.name), mime = chatFileMime(name);
+    if (!mime) throw new ProductionError(400, "Поддерживаются PDF, Excel, CAD-файлы, документы и архивы");
+    if (!Buffer.isBuffer(req.body) || !req.body.length) throw new ProductionError(400, "Выберите файл для загрузки");
+    const count = await prisma.rkdFile.count({ where: { orderId: order.id } });
+    if (count >= MAX_RKD_FILES_PER_ORDER) throw new ProductionError(400, "В заказ можно загрузить не более 50 файлов РКД");
+    const sha256 = createHash("sha256").update(req.body).digest("hex");
+    const duplicate = await prisma.rkdFile.findUnique({ where: { orderId_sha256: { orderId: order.id, sha256 } }, select: { id: true } });
+    if (duplicate) return res.json({ id: duplicate.id, duplicate: true });
+    const file = await prisma.rkdFile.create({ data: { orderId: order.id, uploaderId: req.session.sub, name, mime, size: req.body.length, sha256, data: req.body } });
+    res.status(201).json({ id: file.id, name: file.name });
+  });
+
+  router.get("/orders/:id/files/rkd/:fileId", async (req, res) => {
+    const order = await requireOrder(req);
+    const file = await prisma.rkdFile.findFirst({ where: { id: z.string().uuid().parse(req.params.fileId), orderId: order.id } });
+    if (!file) throw new ProductionError(404, "Файл РКД по этому заказу не найден");
+    res.setHeader("Content-Type", file.mime); res.setHeader("Content-Disposition", contentDisposition(file.name, file.mime));
+    res.setHeader("X-Content-Type-Options", "nosniff"); res.setHeader("Cache-Control", "private, no-cache");
+    res.send(file.data);
+  });
+
+  router.delete("/orders/:id/rkd/:fileId", async (req, res) => {
+    if (req.session?.role !== "PLANNER") throw new ProductionError(403, "Удалять РКД может только Планер");
+    const order = await requireOrder(req);
+    const file = await prisma.rkdFile.findFirst({ where: { id: z.string().uuid().parse(req.params.fileId), orderId: order.id }, select: { id: true } });
+    if (!file) throw new ProductionError(404, "Файл РКД по этому заказу не найден");
+    await prisma.rkdFile.delete({ where: { id: file.id } });
+    res.status(204).end();
   });
 
   router.get("/orders/:id/files/calculator/:deal/:kind", async (req, res) => {
