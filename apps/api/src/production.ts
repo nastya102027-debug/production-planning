@@ -320,7 +320,7 @@ export function productionRouter(prisma: PrismaClient, hub: EventHub) {
     res.json(centers.map(center => ({ ...center, counts: Object.fromEntries(counts.filter(row => row.workCenterId === center.id).map(row => [row.status, row._count])) })));
   });
   router.post("/operations/:id/actions", async (req, res) => {
-    const input = z.object({ action: z.enum(["start", "pause", "resume", "complete", "cancel", "comment", "problem"]), reason: z.string().trim().max(1000).optional(), comment: z.string().trim().max(2000).optional() }).parse(req.body);
+    const input = z.object({ action: z.enum(["start", "pause", "resume", "complete", "cancel", "comment", "problem"]), reason: z.string().trim().max(1000).optional(), comment: z.string().trim().max(2000).optional(), dependencyOverride: z.enum(["PREVIOUS_NOT_STARTED","PLANNING_ERROR"]).optional() }).parse(req.body);
     const operationId = String(req.params.id), userId = req.session!.sub;
     const operation = await prisma.$transaction(async tx => {
       const initial = await tx.operation.findUnique({ where: { id: operationId }, select: { launchItem: { select: { orderItem: { select: { orderId: true } } } } } });
@@ -331,12 +331,15 @@ export function productionRouter(prisma: PrismaClient, hub: EventHub) {
       if (!current) throw new ProductionError(404, "Задача не найдена");
       if (input.action === "cancel" && req.session!.role !== "PLANNER") throw new ProductionError(403, "Отменять операции может только Планер");
       const now = new Date();
-      const note = [input.reason, input.comment].filter(Boolean).join("\n");
+      const blockedBy=current.predecessors.filter(link=>link.predecessor.status!=="COMPLETED");
+      const overrideAllowed=input.action==="start"&&blockedBy.length>0&&!!input.dependencyOverride;
+      const overrideNote=input.dependencyOverride==="PREVIOUS_NOT_STARTED"?"Подтверждено получение изделия: предыдущий участок не отметил запуск в системе.":input.dependencyOverride==="PLANNING_ERROR"?"Подтверждено получение изделия: сотрудник указал на ошибку планирования маршрута.":"";
+      const note = [input.reason, input.comment, overrideNote].filter(Boolean).join("\n");
       if (["comment", "problem"].includes(input.action)) {
         if (!note) throw new ProductionError(400, "Введите комментарий");
         await tx.operationStatusHistory.create({ data: { operationId, changedById: userId, fromStatus: current.status, toStatus: current.status, reason: `${input.action === "problem" ? "Проблема" : "Комментарий"}: ${note}`, changedAt: now } });
       } else {
-        const status = nextStatus(current.status, input.action, current.predecessors.some(link => link.predecessor.status !== "COMPLETED"), input.reason) as OperationStatus;
+        const status = nextStatus(current.status, input.action, blockedBy.length>0, input.reason, overrideAllowed) as OperationStatus;
         await tx.operationTimeEntry.updateMany({ where: { operationId, finishedAt: null }, data: { finishedAt: now } });
         if (status === "IN_PROGRESS") await tx.operationTimeEntry.create({ data: { operationId, userId, startedAt: now } });
         await tx.operation.update({ where: { id: operationId }, data: { status, stopReason: status === "PAUSED" ? note : null, ...(status === "COMPLETED" ? { completedQuantity: current.quantity } : {}) } });
@@ -353,6 +356,11 @@ export function productionRouter(prisma: PrismaClient, hub: EventHub) {
       if (input.action === "pause" || input.action === "problem") {
         const planners = await tx.user.findMany({ where: { role: { in: ["PLANNER", "DIRECTOR"] }, active: true }, select: { id: true } });
         await tx.notification.create({ data: { type: input.action === "pause" ? "OPERATION_PAUSED" : "PROBLEM", title: `${current.workCenter.name} · заказ № ${current.launchItem.orderItem.order.productionOrderNumber}`, message: `${current.launchItem.orderItem.name}\n${note}`, entityType: "Operation", entityId: operationId, recipients: { create: planners.map(user => ({ userId: user.id })) } } });
+      }
+      if (overrideAllowed) {
+        const planners = await tx.user.findMany({ where: { role: { in: ["PLANNER", "DIRECTOR"] }, active: true }, select: { id: true } });
+        const previousCenters=[...new Set(blockedBy.map(link=>link.predecessor.workCenter.name))].join(", ");
+        await tx.notification.create({ data: { type: "PROBLEM", title: `Подтверждён запуск без отметки · заказ № ${current.launchItem.orderItem.order.productionOrderNumber}`, message: `${current.launchItem.orderItem.name}\nТекущий участок: ${current.workCenter.name}\nПредыдущий участок: ${previousCenters}\n${overrideNote}`, entityType: "Operation", entityId: operationId, recipients: { create: planners.map(user => ({ userId: user.id })) } } });
       }
       await tx.auditLog.create({ data: { actorId: userId, action: `OPERATION_${input.action.toUpperCase()}`, entityType: "Operation", entityId: operationId, before: { status: current.status }, after: input } });
       return tx.operation.findUniqueOrThrow({ where: { id: operationId }, include: operationInclude });
