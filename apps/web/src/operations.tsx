@@ -60,7 +60,8 @@ function PositionCard({group,onOpen,labels,colors,mobilePrimary=false}:{group:Po
   const orderedTasks=routeOrder(group.tasks), status=positionStatus(orderedTasks), active=orderedTasks.filter(task=>["IN_PROGRESS","PAUSED"].includes(task.status));
   const current=active.length?active:orderedTasks.filter(task=>task.status==="QUEUED");
   const completed=group.tasks.filter(task=>task.status==="COMPLETED").length;
-  const next=orderedTasks.find(task=>task.status==="QUEUED");
+  const nextAfterActive=orderedTasks.filter(task=>task.status==="QUEUED"&&task.predecessors.some(predecessor=>active.some(currentTask=>currentTask.id===predecessor.id)));
+  const next=nextAfterActive[0]??orderedTasks.find(task=>task.status==="QUEUED");
   const routeOperations=group.tasks[0]?.routeOperations??[];
   const byOperationId=new Map(routeOperations.map(stage=>[stage.id,stage]));
   const activeRouteStages=routeOperations.filter(stage=>["IN_PROGRESS","PAUSED"].includes(stage.status));
@@ -74,8 +75,8 @@ function PositionCard({group,onOpen,labels,colors,mobilePrimary=false}:{group:Po
     {activeCenters.length>0&&<p className="position-location">Сейчас на участке{activeCenters.length>1?"ах":""}: <b>{activeCenters.join(", ")}</b></p>}
     {!activeCenters.length&&readyCenters.length>0&&<p className="position-location pending">Должна поступить на участок{readyCenters.length>1?"и":""}: <b>{readyCenters.join(", ")}</b></p>}
     <section className="position-stages"><h4>{active.length?"Выполняется на участке":"Задача этого участка"}</h4>{current.map(task=>{const stage=detail(task);return <button key={task.id} onClick={()=>onOpen(task)}><span><b>{task.workCenter.name}</b><small>{task.title} · {labels[task.status]||task.status}</small>{stage?.material&&<em>{stage.material.split("\n").filter(Boolean).join(" · ")}{stage.quantity?` · ${stage.quantity} ${stage.unit||"шт."}`:""}</em>}</span><i className={`stage-status ${task.status.toLowerCase()}`} style={{backgroundColor:colors[task.status],color:"#fff"}}>{labels[task.status]||task.status}</i></button>;})}</section>
-    {next&&active.length>0&&<p className="position-next">Следующий этап: <b>{next.workCenter.name}</b></p>}
-    <div className="position-route" aria-label="Маршрут позиции">{orderedTasks.map(task=><span className={task.status.toLowerCase()} key={task.id}>{task.workCenter.name}</span>)}</div>
+    {next&&active.length>0&&<p className="position-next">После завершения: <b>{next.workCenter.name}</b></p>}
+    <section className="position-full-route" aria-label="Полный маршрут изделия"><h4>Полный маршрут изделия</h4><div>{orderedTasks.map((task,index)=><span className={`${task.status.toLowerCase()} ${active.some(currentTask=>currentTask.id===task.id)?"current":""}`} key={task.id}><b>{index+1}. {task.workCenter.name}</b><small>{labels[task.status]||task.status}</small></span>)}</div></section>
     {mobilePrimary&&<button className="position-open" onClick={()=>onOpen(current[0]??group.tasks[0])}>Открыть задачу</button>}
   </article>;
 }
