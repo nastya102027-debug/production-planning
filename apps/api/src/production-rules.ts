@@ -11,7 +11,7 @@ export function validateSteps(steps: { predecessorIndexes: number[] }[]) {
   });
 }
 
-export function nextStatus(status: string, action: string, blocked: boolean, reason?: string) {
+export function nextStatus(status: string, action: string, blocked: boolean, reason?: string, dependencyOverride = false) {
   if (action === "pause" && !reason?.trim()) throw new ProductionError(400, "Укажите причину остановки");
   if (action === "cancel" && !reason?.trim()) throw new ProductionError(400, "Укажите причину отмены");
   const transitions: Record<string, Record<string, string>> = {
@@ -19,7 +19,7 @@ export function nextStatus(status: string, action: string, blocked: boolean, rea
   };
   const next = transitions[status]?.[action];
   if (!next) throw new ProductionError(409, "Статус задачи уже изменился. Обновите карточку");
-  if (blocked && (action === "start" || action === "resume")) throw new ProductionError(409, "Сначала завершите предыдущие этапы маршрута");
+  if (blocked && action === "start" && !dependencyOverride) throw new ProductionError(409, "Сначала завершите предыдущие этапы маршрута");
   return next;
 }
 
