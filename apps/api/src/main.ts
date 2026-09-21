@@ -80,6 +80,8 @@ app.get("/api/work-centers",auth,async(req,res)=>{
   if(seesEverything(req.session!.role))return res.json(await prisma.workCenter.findMany({where:{active:true},orderBy:{name:"asc"}}));
   const links=await prisma.userWorkCenter.findMany({where:{userId:req.session!.sub},select:{workCenter:true}});res.json(links.map(x=>x.workCenter));
 });
+app.get("/api/work-centers/rates",auth,planner,async(_req,res)=>res.json((await prisma.workCenter.findMany({where:{active:true},select:{id:true,name:true,hourlyRate:true},orderBy:{name:"asc"}})).map(center=>({...center,hourlyRate:center.hourlyRate===null?null:Number(center.hourlyRate)}))));
+app.put("/api/work-centers/:id/rate",auth,planner,async(req,res)=>{const id=z.string().uuid().parse(req.params.id),input=z.object({hourlyRate:z.number().finite().min(0).max(1000000).nullable()}).parse(req.body);const center=await prisma.workCenter.update({where:{id},data:{hourlyRate:input.hourlyRate},select:{id:true,name:true,hourlyRate:true}}).catch(()=>null);if(!center)throw new ProductionError(404,"Участок не найден");await prisma.auditLog.create({data:{actorId:req.session!.sub,action:"WORK_CENTER_RATE_UPDATED",entityType:"WorkCenter",entityId:id,after:input}});res.json({...center,hourlyRate:center.hourlyRate===null?null:Number(center.hourlyRate)});});
 app.get("/api/stop-reasons",auth,async(_req,res)=>res.json(await prisma.stopReasonCatalog.findMany({where:{active:true},orderBy:{name:"asc"}})));
 app.get("/api/stop-reasons/manage",auth,planner,async(_req,res)=>res.json(await prisma.stopReasonCatalog.findMany({orderBy:{name:"asc"}})));
 app.post("/api/stop-reasons",auth,planner,async(req,res)=>{const name=z.object({name:z.string().trim().min(1).max(200)}).parse(req.body).name;try{const reason=await prisma.stopReasonCatalog.create({data:{name}});await prisma.auditLog.create({data:{actorId:req.session!.sub,action:"STOP_REASON_CREATED",entityType:"StopReasonCatalog",entityId:reason.id,after:{name}}});res.status(201).json(reason);}catch{res.status(409).json({message:"Такая причина уже есть"});}});
@@ -152,6 +154,33 @@ function presentOrder(order: any) {
     completedTotal: items.reduce((sum: number, item: any) => sum + item.completedTotal, 0)
   };
 }
+
+const contractorCenters=new Set(["Лазер","Гибка","Нитрид","Малярка Порошок"]);
+function operationMoney(operation:any,now:Date){
+  const seconds=operation.timeEntries.reduce((sum:number,entry:any)=>sum+Math.max(0,((entry.finishedAt??(operation.status==="IN_PROGRESS"?now:entry.startedAt)).getTime()-entry.startedAt.getTime())/1000),0);
+  const rate=Number(operation.hourlyRate??operation.workCenter.hourlyRate??0);
+  return {seconds,rate,amount:seconds/3600*rate};
+}
+function orderFinance(order:any,now:Date){
+  const income=new Map<string,number>(),expense=new Map<string,number>(),missingRates=new Set<string>();
+  for(const item of order.items)for(const launch of item.launchItems)for(const operation of launch.operations){
+    if(operation.status==="QUEUED"||operation.status==="CANCELLED")continue;
+    const money=operationMoney(operation,now);if(!money.rate)missingRates.add(operation.workCenter.name);
+    if(order.organization==="ECONTRID")income.set(operation.workCenter.name,(income.get(operation.workCenter.name)??0)+money.amount);
+    if(contractorCenters.has(operation.workCenter.name))expense.set(operation.workCenter.name,(expense.get(operation.workCenter.name)??0)+money.amount);
+  }
+  const rows=(values:Map<string,number>)=>[...values.entries()].map(([workCenter,amount])=>({workCenter,amount:Math.round(amount*100)/100})).sort((a,b)=>b.amount-a.amount||a.workCenter.localeCompare(b.workCenter,"ru"));
+  const total=(values:{amount:number}[])=>Math.round(values.reduce((sum,row)=>sum+row.amount,0)*100)/100;
+  const incomeRows=rows(income),expenseRows=rows(expense);
+  return {orderId:order.id,income:order.organization==="ECONTRID"?{total:total(incomeRows),centers:incomeRows}:null,contractor:{total:total(expenseRows),centers:expenseRows},missingRates:[...missingRates].sort((a,b)=>a.localeCompare(b,"ru"))};
+}
+
+app.get("/api/orders/finance",auth,planner,async(req,res)=>{
+  const ids=z.string().max(5000).optional().parse(req.query.ids)?.split(",").filter(Boolean)??[];
+  if(!ids.length)return res.json({items:[]});if(ids.length>100)throw new ProductionError(400,"Слишком много заказов");
+  const orders=await prisma.order.findMany({where:{id:{in:ids},archiveClearedAt:null},include:{items:{where:{archivedAt:null},include:{launchItems:{include:{operations:{include:{workCenter:true,timeEntries:true}}}}}}}});
+  res.json({items:orders.map(order=>orderFinance(order,new Date()))});
+});
 
 app.get("/api/orders", auth, planner, async (req, res) => {
   const query = z.object({ search: z.string().trim().max(100).optional(), archived: z.enum(["true", "false"]).optional() }).parse(req.query);
