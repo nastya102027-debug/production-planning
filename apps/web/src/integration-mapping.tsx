@@ -4,7 +4,7 @@ type Mapping={targetField:string;sourceField:string;active:boolean};
 type StopReason={id:string;name:string;active:boolean};
 type OperationStatus={code:string;name:string;color:string};
 type CenterRate={id:string;name:string;hourlyRate:number|null};
-const fields=[['productionOrderNumber','Номер производства'],['customerOrderNumber','Номер заказа клиента'],['organization','Организация'],['dueDate','Конечный срок'],['itemName','Наименование позиции'],['quantity','Количество'],['unitPrice','Цена за единицу']] as const;
+const fields=[['productionOrderNumber','Номер производства'],['customerOrderNumber','Номер заказа покупателя'],['organization','Организация'],['dueDate','Конечный срок'],['itemName','Наименование позиции'],['quantity','Количество'],['unitPrice','Цена за единицу']] as const;
 async function api<T>(path:string,init?:RequestInit):Promise<T>{const response=await fetch(`/api${path}`,{...init,credentials:'include',headers:{'Content-Type':'application/json',...init?.headers}});if(!response.ok)throw new Error((await response.json()).message||'Ошибка запроса');return response.json();}
 const money=(value:number)=>new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2}).format(value);
 

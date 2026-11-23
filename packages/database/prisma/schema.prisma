@@ -102,6 +102,11 @@ model UserWorkCenter {
 model Order {
   id String @id @default(uuid())
   productionOrderNumber String @unique @map("number")
+  externalSource String?
+  externalId String?
+  externalVersion String?
+  lastSyncedAt DateTime?
+  sourceCreatedAt DateTime?
   customerOrderNumber String?
   customer String?
   organization Organization?
@@ -123,13 +128,16 @@ model Order {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([status, dueDate])
+  @@index([sourceCreatedAt])
   @@index([customerOrderNumber])
+  @@unique([externalSource, externalId])
 }
 
 model OrderItem {
   remainingPlan Json?
   remainingPlanVersion Int @default(0)
   id String @id @default(uuid())
+  externalId String?
   orderId String
   order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
   name String
@@ -146,6 +154,7 @@ model OrderItem {
   updatedAt DateTime @updatedAt
   @@index([orderId, status])
   @@index([orderId, archivedAt])
+  @@unique([orderId, externalId])
 }
 
 model Procurement {

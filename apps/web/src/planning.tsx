@@ -70,6 +70,7 @@ function launchOperationLevels(launchItem:LaunchItem):Operation[][] {
 }
 
 export function PlanningScreen({onOpenCenter}:{onOpenCenter:(id:string)=>void;onOpenTemplates:()=>void}){
+  const initialOrderId=new URLSearchParams(window.location.hash.slice(1)).get("order")??"";
   const revision=useProductionEvents();
   const [search,setSearch]=useState(""); const [orderPage,setOrderPage]=useState(1); const [orderTotal,setOrderTotal]=useState(0);
   const [centerStats,setCenterStats]=useState<(WorkCenter & {counts:Record<string,number>})[]>([]);
@@ -79,7 +80,7 @@ export function PlanningScreen({onOpenCenter}:{onOpenCenter:(id:string)=>void;on
   const [launches,setLaunches]=useState<Launch[]>([]);
   const [orderLaunches,setOrderLaunches]=useState<Launch[]>([]);
   const [centers,setCenters]=useState<WorkCenter[]>([]);
-  const [selectedOrderId,setSelectedOrderId]=useState("");
+  const [selectedOrderId,setSelectedOrderId]=useState(initialOrderId);
   const [routes,setRoutes]=useState<Record<string,ProductionRoute[]>>({});
   const [templates,setTemplates]=useState<RouteTemplate[]>([]);
   const [routePicker,setRoutePicker]=useState("");
@@ -99,7 +100,8 @@ export function PlanningScreen({onOpenCenter}:{onOpenCenter:(id:string)=>void;on
   const [operationLabels,setOperationLabels]=useState(defaultOperationLabels);
 
   async function load(){
-    const [orderResult,nextLaunches,nextCenters,nextTemplates]=await Promise.all([api<{items:Order[];total:number}>(`/planning/orders?search=${encodeURIComponent(search)}&page=${orderPage}`),api<Launch[]>(`/launches?page=${launchPage}`),api<(WorkCenter & {counts:Record<string,number>})[]>("/planning/centers"),api<RouteTemplate[]>("/route-templates")]);
+    const focusedOrder=initialOrderId&&!search&&orderPage===1?`&orderId=${encodeURIComponent(initialOrderId)}`:"";
+    const [orderResult,nextLaunches,nextCenters,nextTemplates]=await Promise.all([api<{items:Order[];total:number}>(`/planning/orders?search=${encodeURIComponent(search)}&page=${orderPage}${focusedOrder}`),api<Launch[]>(`/launches?page=${launchPage}`),api<(WorkCenter & {counts:Record<string,number>})[]>("/planning/centers"),api<RouteTemplate[]>("/route-templates")]);
     const nextOrders=orderResult.items; setOrderTotal(orderResult.total); setCenterStats(nextCenters);
     setOrders(nextOrders);setLaunches(nextLaunches);setCenters(nextCenters);setTemplates(nextTemplates);setSelectedOrderId(current=>nextOrders.some(order=>order.id===current)?current:nextOrders[0]?.id||"");setLoading(false);
   }
@@ -184,7 +186,7 @@ export function PlanningScreen({onOpenCenter}:{onOpenCenter:(id:string)=>void;on
     <section className="planning-workspace">
       <aside className="planning-orders"><input aria-label="Поиск заказов для планирования" placeholder="Найти заказ или позицию" value={search} onChange={event=>{setSearch(event.target.value);setOrderPage(1);}}/><header><b>Заказы</b><span>{orderTotal}</span></header><div>{orders.map(order=>{
         const remaining=order.items.reduce((sum,item)=>sum+Math.max(0,item.quantity-(launchedByItem[item.id]||0)),0);
-        return <button className={selectedOrderId===order.id?"selected":""} key={order.id} onClick={()=>setSelectedOrderId(order.id)}><span><b>№ {order.productionOrderNumber}</b><small>Покупатель № {order.customerOrderNumber||"—"}</small></span><em>{remaining} шт. осталось</em><i className={`order-state ${order.status.toLowerCase()}`}>{statusLabel[order.status]||order.status}</i></button>;
+        return <button className={selectedOrderId===order.id?"selected":""} key={order.id} onClick={()=>setSelectedOrderId(order.id)}><span><b>№ {order.productionOrderNumber}</b><small>Заказ покупателя № {order.customerOrderNumber||"—"}</small></span><em>{remaining} шт. осталось</em><i className={`order-state ${order.status.toLowerCase()}`}>{statusLabel[order.status]||order.status}</i></button>;
       })}</div><div className="pagination"><button disabled={orderPage===1} onClick={()=>setOrderPage(value=>value-1)}>Назад</button><span>{orderPage}</span><button disabled={orderPage*30>=orderTotal} onClick={()=>setOrderPage(value=>value+1)}>Далее</button></div></aside>
       <main className="launch-editor">{!selectedOrder?<div className="planning-empty"><Boxes/><b>Нет заказов для планирования</b></div>:<>
         <header><div><small>ЗАКАЗ НА ПРОИЗВОДСТВО</small><h3>№ {selectedOrder.productionOrderNumber}</h3><span>Срок: {dateLabel(selectedOrder.dueDate)}</span></div><div><label>Номер запуска<input value="Будет создан автоматически" readOnly/></label><label>Приоритет<select value={priority} onChange={event=>setPriority(event.target.value)}><option value="LOW">Низкий</option><option value="NORMAL">Обычный</option><option value="HIGH">Высокий</option><option value="CRITICAL">Критический</option></select></label></div></header>

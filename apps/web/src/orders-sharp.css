@@ -1,0 +1,63 @@
+/* Строгий, контрастный интерфейс раздела заказов. Подключается последним. */
+.orders-page .kicker{margin-bottom:6px;font-size:14px!important;letter-spacing:.06em;text-transform:none}
+.orders-page .page-actions h2{font-size:30px;line-height:1.15}
+.orders-page .primary,.orders-page .secondary,.orders-page .order-search,.orders-page .order-filters,
+.orders-page .order-filters select,.orders-page .order-filters input,.orders-page .order-table,
+.orders-page .order-row,.orders-page .status,.orders-page .organization-badge,.orders-page .finance-card,
+.orders-page .order-form,.orders-page .order-form input,.orders-page .order-form select,
+.orders-page .order-form textarea,.orders-page .due-preview,.orders-page .organization-option{
+  border-radius:2px!important
+}
+.orders-page .page-actions>div:last-child{flex-wrap:wrap}
+.orders-page .primary,.orders-page .secondary{min-height:44px;padding:10px 16px;font-size:14px}
+.orders-page .order-search{min-height:44px;padding:0 13px}
+.orders-page .order-search input{min-width:260px;height:42px;font-size:15px}
+.orders-page .order-filters{gap:12px;margin:0 0 18px;padding:15px;border-color:var(--edge)!important;background:rgba(18,24,30,.78)!important;box-shadow:none!important}
+.orders-page .order-filters label{gap:7px;color:var(--w-2);font-size:14px!important;font-weight:700}
+.orders-page .order-filters select,.orders-page .order-filters input{min-width:155px;height:42px;padding:0 12px;font-size:15px!important}
+.orders-page .filter-select{position:relative;display:grid;gap:7px;min-width:162px}
+.orders-page .filter-select>span{color:var(--w-2);font-size:14px;font-weight:700}
+.orders-page .filter-select details{position:relative}
+.orders-page .filter-select summary{position:relative;display:flex;align-items:center;min-width:162px;height:42px;padding:0 38px 0 12px;border:1px solid var(--edge);border-radius:2px;background:#171e25;color:var(--w-1);font-size:15px;font-weight:700;list-style:none;cursor:pointer;user-select:none}
+.orders-page .filter-select summary::-webkit-details-marker{display:none}
+.orders-page .filter-select summary::after{content:"";position:absolute;right:14px;top:14px;width:8px;height:8px;border-right:2px solid var(--w-2);border-bottom:2px solid var(--w-2);transform:rotate(45deg);transition:transform .15s ease,top .15s ease}
+.orders-page .filter-select details[open] summary{border-color:var(--brass-300);box-shadow:0 0 0 2px rgba(201,162,39,.12)}
+.orders-page .filter-select details[open] summary::after{top:18px;transform:rotate(225deg)}
+.orders-page .filter-select details>div{position:absolute;z-index:60;top:calc(100% + 6px);left:0;min-width:100%;max-height:260px;overflow:auto;padding:6px;border:1px solid var(--edge);border-radius:2px;background:#11171d;box-shadow:0 16px 36px rgba(0,0,0,.46)}
+.orders-page .filter-select details button{display:block;width:100%;padding:10px 12px;border:0;border-left:3px solid transparent;border-radius:0;background:transparent;color:var(--w-2);font:inherit;font-size:14px;font-weight:700;text-align:left;white-space:nowrap;cursor:pointer}
+.orders-page .filter-select details button:hover,.orders-page .filter-select details button:focus-visible{outline:0;border-left-color:var(--brass-300);background:rgba(201,162,39,.1);color:var(--w-1)}
+.orders-page .filter-select details button.selected{border-left-color:var(--brass-200);background:rgba(201,162,39,.15);color:var(--brass-100)}
+.orders-page .order-table{border:0!important;background:transparent!important;overflow:visible!important}
+.orders-page .order-row{position:relative;min-width:1050px;grid-template-columns:2.05fr .85fr 1.25fr .5fr .75fr .8fr;gap:18px;min-height:118px;margin:0 0 10px;padding:20px 22px;border:1px solid var(--edge)!important;background:rgba(20,27,34,.82)!important;box-shadow:0 8px 24px rgba(0,0,0,.2)!important;transition:border-color .15s ease,background .15s ease,transform .15s ease}
+.orders-page .order-row:not(.heading)::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--brass-300)}
+.orders-page .order-row:not(.heading):hover{transform:translateY(-1px);border-color:rgba(224,205,147,.5)!important;background:rgba(25,33,41,.94)!important}
+.orders-page .order-row.heading{min-height:48px;margin-bottom:8px;padding-block:13px;background:rgba(10,14,18,.7)!important;color:var(--w-2)!important;font-size:13px!important;font-weight:800;letter-spacing:.02em;text-transform:none;box-shadow:none!important}
+.orders-page .order-row>span{gap:7px;font-size:16px!important;line-height:1.4}
+.orders-page .order-row>span>b{color:var(--w-1)!important;font-size:17px!important}
+.orders-page .order-identity>b{font-size:19px!important;letter-spacing:.01em}
+.orders-page .order-row small,.orders-page .order-nomenclature,.orders-page .order-nomenclature strong{color:var(--w-2)!important;font-size:14px!important;line-height:1.45}
+.orders-page .order-nomenclature{max-width:560px;margin-top:5px}
+.orders-page .organization-badge{margin-top:5px;padding:6px 10px 6px 20px;font-size:13px!important}
+.orders-page .organization-badge::before{width:8px;height:8px;margin-top:4px}
+.orders-page .status{padding:7px 10px;font-size:13px!important;line-height:1.2;text-transform:none}
+.orders-page .order-statuses{align-content:center;align-items:flex-start}
+.orders-page .order-statuses>small{color:var(--w-3)!important;font-size:12px!important;font-weight:800;letter-spacing:.03em;text-transform:uppercase}
+.orders-page .site-launch-status{width:max-content;max-width:100%;padding:7px 10px;border:1px solid;border-radius:2px;background:transparent;font:inherit;font-size:13px;font-weight:800;line-height:1.2;text-align:left;cursor:pointer;transition:background .15s ease,border-color .15s ease}
+.orders-page .site-launch-status.launched{border-color:rgba(78,190,129,.55);background:rgba(78,190,129,.1);color:#8de0b2}
+.orders-page .site-launch-status.not-launched{border-color:rgba(224,181,69,.58);background:rgba(224,181,69,.1);color:var(--brass-100)}
+.orders-page .site-launch-status:hover,.orders-page .site-launch-status:focus-visible{outline:2px solid rgba(224,205,147,.22);outline-offset:2px;filter:brightness(1.12)}
+.orders-page .order-row-bottom{grid-column:1/-1;display:grid;grid-template-columns:minmax(300px,1fr) auto;align-items:end;gap:14px 20px;padding-top:16px;border-color:var(--edge-soft)!important}
+.orders-page .order-comment-preview{grid-column:1/-1;display:grid;grid-template-columns:120px minmax(0,1fr);gap:14px;padding:13px 15px;border-left:4px solid var(--brass-300);background:rgba(201,162,39,.08)}
+.orders-page .order-comment-preview b{color:var(--brass-200);font-size:14px}
+.orders-page .order-comment-preview p{margin:0;color:var(--w-1);font-size:15px;line-height:1.5;white-space:pre-wrap}
+.orders-page .order-finance>small,.orders-page .finance-card span,.orders-page .finance-card em,.orders-page .finance-card.missing b{font-size:13px!important}
+.orders-page .finance-card{padding:11px 13px;background:rgba(140,165,185,.08)!important}
+.orders-page .finance-card b{font-size:16px!important}
+.orders-page .order-actions{gap:8px}
+.orders-page .order-actions .secondary{min-height:38px;padding:8px 12px;font-size:14px!important}
+.orders-page .table-empty,.orders-page .table-empty span{font-size:15px!important}
+.orders-page .order-form label,.orders-page .organization-picker h3{font-size:14px!important}
+.orders-page .form-head small,.orders-page .due-preview span,.orders-page .order-form footer span{font-size:13px!important}
+.orders-page .order-comment{font-size:14px!important}
+.orders-page .order-comment textarea{min-height:92px;font-size:15px!important}
+@media(max-width:900px){.orders-page .order-table{overflow:auto!important}.orders-page .order-filters{align-items:stretch}.orders-page .order-filters label{flex:1 1 190px}.orders-page .order-filters select,.orders-page .order-filters input{width:100%}}

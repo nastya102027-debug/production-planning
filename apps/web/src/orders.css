@@ -16,6 +16,12 @@
 .order-search { display: flex; align-items: center; gap: 7px; padding: 0 11px; background: #fff; border: 1px solid #d7dcd8; }
 .order-search svg { width: 16px; color: #738078; }
 .order-search input { height: 38px; border: 0; outline: 0; }
+.order-row:not(.heading) { cursor:pointer; }
+.order-comment { display:grid; gap:7px; margin:14px 0; color:#66736d; font-size:12px; font-weight:700; }
+.order-comment textarea { width:100%; resize:vertical; padding:10px 12px; border:1px solid #d7dcd8; border-radius:10px; font:inherit; }
+.order-filters { display:flex; align-items:flex-end; flex-wrap:wrap; gap:10px; margin:-4px 0 18px; padding:12px; border:1px solid #d7dcd8; border-radius:12px; background:#fff; }
+.order-filters label { display:grid; gap:5px; color:#66736d; font-size:11px; font-weight:700; }
+.order-filters select,.order-filters input { min-width:145px; height:38px; padding:0 10px; border:1px solid #d7dcd8; border-radius:8px; background:#fff; color:inherit; font:inherit; }
 .order-table { overflow: auto; background: #fff; border: 1px solid #dfe4e0; }
 .order-row { min-width: 980px; display: grid; grid-template-columns: 1.7fr .8fr 1fr .55fr .8fr .75fr; align-items: center; gap: 14px; min-height: 82px; padding: 15px 18px; border-bottom: 1px solid #e8ebe9; }
 .order-row.heading { min-height: 42px; background: #f7f8f6; color: #77827b; font-size: 11px; font-weight: 800; text-transform: uppercase; }

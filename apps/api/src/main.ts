@@ -19,6 +19,8 @@ import { staffRouter } from "./staff.js";
 import { dashboardTotals } from "./dashboard.js";
 import { parseImportedOrders, previewOrderCsv } from "./order-csv.js";
 import { isReadOnlyViolation, seesEverything } from "./access.js";
+import { oneCClientFromEnv } from "./one-c-client.js";
+import { syncOneCOrders } from "./one-c-sync.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -93,6 +95,13 @@ app.put("/api/operation-statuses/:code",auth,planner,async(req,res)=>{const code
 const mappingInput=z.object({targetField:z.enum(["productionOrderNumber","customerOrderNumber","organization","dueDate","itemName","quantity","unitPrice"]),sourceField:z.string().trim().min(1).max(200),active:z.boolean()});
 app.get("/api/integrations/1c/mapping",auth,planner,async(_req,res)=>res.json(await prisma.integrationFieldMapping.findMany({where:{source:"1C"},orderBy:{targetField:"asc"}})));
 app.put("/api/integrations/1c/mapping",auth,planner,async(req,res)=>{const rows=z.array(mappingInput).max(7).parse(req.body);const unique=new Set(rows.map(row=>row.targetField));if(unique.size!==rows.length)return res.status(400).json({message:"Поле заказа нельзя сопоставить дважды"});await prisma.$transaction(async tx=>{await tx.integrationFieldMapping.deleteMany({where:{source:"1C"}});if(rows.length)await tx.integrationFieldMapping.createMany({data:rows.map(row=>({...row,source:"1C"}))});await tx.auditLog.create({data:{actorId:req.session!.sub,action:"INTEGRATION_MAPPING_UPDATED",entityType:"Integration",after:{source:"1C",fields:rows.map(row=>row.targetField)}}});});res.json(await prisma.integrationFieldMapping.findMany({where:{source:"1C"},orderBy:{targetField:"asc"}}));});
+let oneCSyncRunning=false;
+app.post("/api/integrations/1c/sync",auth,planner,async(req,res)=>{
+  if(oneCSyncRunning)return res.status(409).json({message:"Обмен с 1С уже выполняется"});
+  oneCSyncRunning=true;
+  try{res.json(await syncOneCOrders(prisma,oneCClientFromEnv(),req.session!.sub));}
+  finally{oneCSyncRunning=false;}
+});
 const hub = createEventHub();
 app.use("/api/chat", auth, chatRouter(prisma, hub));
 app.use("/api", auth, orderFilesRouter(prisma));
@@ -183,18 +192,25 @@ app.get("/api/orders/finance",auth,planner,async(req,res)=>{
 });
 
 app.get("/api/orders", auth, planner, async (req, res) => {
-  const query = z.object({ search: z.string().trim().max(100).optional(), archived: z.enum(["true", "false"]).optional() }).parse(req.query);
+  const query = z.object({
+    search: z.string().trim().max(100).optional(), archived: z.enum(["true", "false"]).optional(),
+    status: z.enum(["DRAFT","PROCUREMENT","READY_FOR_LAUNCH","IN_PRODUCTION","PARTIALLY_READY","COMPLETED","ARCHIVED"]).optional(),
+    organization: z.enum(["IP_VETROV","LATUNING","ECONTRID"]).optional(), source: z.enum(["1C","MANUAL"]).optional(),
+    from: z.string().refine(isDateOnly).optional(), to: z.string().refine(isDateOnly).optional()
+  }).parse(req.query);
+  const dateRange={...(query.from?{gte:parseDateOnly(query.from)}:{}),...(query.to?{lt:new Date(parseDateOnly(query.to).getTime()+86_400_000)}:{})};
+  const filters:Prisma.OrderWhereInput[]=[];
+  if(query.from||query.to)filters.push({OR:[{sourceCreatedAt:dateRange},{sourceCreatedAt:null,createdAt:dateRange}]});
+  if(query.search){const contains={contains:query.search,mode:"insensitive" as const};filters.push({OR:[{productionOrderNumber:contains},{customerOrderNumber:contains},{customer:contains}]});}
   const orders = await prisma.order.findMany({
     where: {
       archivedAt: query.archived === "true" ? { not: null } : null, archiveClearedAt:null,
-      ...(query.search ? { OR: [
-        { productionOrderNumber: { contains: query.search, mode: "insensitive" } },
-        { customerOrderNumber: { contains: query.search, mode: "insensitive" } },
-        { customer: { contains: query.search, mode: "insensitive" } }
-      ] } : {})
+      ...(query.status?{status:query.status}:{}), ...(query.organization?{organization:query.organization}:{}),
+      ...(query.source==="1C"?{externalSource:"1C"}:query.source==="MANUAL"?{externalSource:null}:{}),
+      AND:filters
     },
-    include: { items: { where: { archivedAt: null } }, procurement: true },
-    orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+    include: { items: { where: { archivedAt: null } }, procurement: true, _count:{select:{launches:true}} },
+    orderBy: [{ sourceCreatedAt: { sort:"desc",nulls:"last" } }, { createdAt: "desc" }],
     take: 100
   });
   res.json(orders.map(presentOrder));
@@ -237,7 +253,7 @@ app.post("/api/orders/import", auth, planner, async (req, res) => {
   const imported=parseImportedOrders(csv); if(!imported.length)return res.status(400).json({message:"В файле нет позиций заказов"});
   const duplicates=await prisma.order.findMany({where:{productionOrderNumber:{in:imported.map(order=>order.productionOrderNumber)}},select:{productionOrderNumber:true}});
   if(duplicates.length)return res.status(409).json({message:`Заказы уже существуют: ${duplicates.map(order=>order.productionOrderNumber).join(", ")}`});
-  await prisma.$transaction(async tx=>{for(const order of imported){const created=await tx.order.create({data:{productionOrderNumber:order.productionOrderNumber,customerOrderNumber:order.customerOrderNumber,organization:order.organization,status:order.status,dueDate:order.dueDate?parseDateOnly(order.dueDate):null,items:{create:order.items}}});await tx.auditLog.create({data:{actorId:req.session!.sub,action:"ORDER_IMPORTED",entityType:"Order",entityId:created.id,after:{productionOrderNumber:created.productionOrderNumber,itemCount:order.items.length}}});}});
+  await prisma.$transaction(async tx=>{for(const order of imported){const created=await tx.order.create({data:{productionOrderNumber:order.productionOrderNumber,customerOrderNumber:order.customerOrderNumber,organization:order.organization,status:order.status,dueDate:order.dueDate?parseDateOnly(order.dueDate):null,sourceCreatedAt:new Date(),items:{create:order.items}}});await tx.auditLog.create({data:{actorId:req.session!.sub,action:"ORDER_IMPORTED",entityType:"Order",entityId:created.id,after:{productionOrderNumber:created.productionOrderNumber,itemCount:order.items.length}}});}});
   res.status(201).json({orders:imported.length,items:preview.rows});
 });
 
@@ -266,6 +282,7 @@ app.post("/api/orders", auth, planner, async (req, res) => {
         productionLeadDays: input.productionLeadDays,
         dueDate,
         priority: input.priority,
+        sourceCreatedAt: new Date(),
         comment: input.comment || null,
         items: { create: input.items.map(item => ({
           name: item.name,
@@ -475,7 +492,7 @@ app.use((error:unknown,_req:Request,res:Response,_next:NextFunction)=>{
   if (error instanceof ProductionError) return res.status(error.status).json({ message: error.message });
   if (error instanceof z.ZodError) return res.status(400).json({ message: "Проверьте заполненные поля", fields: error.flatten() });
   if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2002", "P2034"].includes(error.code)) return res.status(409).json({ message: "Данные уже изменены или номер занят. Обновите страницу и повторите действие" });
-  console.error("Request failed", error instanceof Error ? error.name : "UnknownError"); res.status(500).json({message:"Внутренняя ошибка сервера"});
+  console.error("Request failed", error instanceof Error ? error.stack : "UnknownError"); res.status(500).json({message:"Внутренняя ошибка сервера"});
 });
 const server = app.listen(Number(process.env.PORT ?? process.env.API_PORT ?? 3000), process.env.HOST ?? "0.0.0.0", () => console.log("Application ready"));
 process.on("SIGTERM", () => { server.close(() => { void prisma.$disconnect().finally(() => process.exit(0)); }); setTimeout(() => process.exit(1), 10000).unref(); });

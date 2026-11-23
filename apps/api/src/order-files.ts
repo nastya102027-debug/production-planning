@@ -7,7 +7,7 @@ import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { chatFileExtension, chatFileMime, contentDisposition, safeFileName } from "./chat-rules.js";
 import { orderAccessWhere } from "./order-access.js";
-import { CALCULATOR_FILES, dealNumbers, isCalculatorFileKind, isDealNumber, sameSecret } from "./order-file-rules.js";
+import { CALCULATOR_FILES, isCalculatorFileKind, isOrderFileKey, orderFileKeys, sameSecret } from "./order-file-rules.js";
 import { ProductionError } from "./production-rules.js";
 
 const MAX_INTAKE_FILE_BYTES = 25 * 1024 * 1024;
@@ -36,7 +36,7 @@ export function orderFilesRouter(prisma: PrismaClient) {
   async function requireOrder(req: Request) {
     const order = await prisma.order.findFirst({ where: { AND: [{ id: z.string().uuid().parse(req.params.id) }, await orderAccessWhere(prisma, req.session!)] }, select: { id: true, productionOrderNumber: true, customerOrderNumber: true } });
     if (!order) throw new ProductionError(404, "Заказ не найден");
-    return { ...order, deals: dealNumbers(order.productionOrderNumber, order.customerOrderNumber) };
+    return { ...order, deals: orderFileKeys(order.productionOrderNumber, order.customerOrderNumber) };
   }
 
   router.get("/orders/:id/files", async (req, res) => {
@@ -127,7 +127,7 @@ export function intakeRouter(prisma: PrismaClient) {
 
   router.post("/files", limit, checkKey, readFile, async (req, res) => {
     const deal = typeof req.query.order === "string" ? req.query.order.trim() : "";
-    if (!isDealNumber(deal)) throw new ProductionError(400, "Номер заказа — только цифры");
+    if (!isOrderFileKey(deal)) throw new ProductionError(400, "Проверьте номер заказа");
     const name = safeFileName(req.query.name), mime = chatFileMime(name);
     if (!mime) throw new ProductionError(400, "Такой тип файла не принимаем");
     if (!Buffer.isBuffer(req.body) || !req.body.length) throw new ProductionError(400, "Файл не пришёл");
