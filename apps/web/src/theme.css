@@ -9,7 +9,69 @@
 .order-form{border-radius:22px;overflow:hidden}
 
 /* светлая тема: под коротким содержимым у автора проглядывал графитовый фон страницы */
-:root[data-theme="light"] .shell>main{background:#eff2f3}
+:root[data-theme="light"]{color:#18211d;background:#f4f6f7;color-scheme:light}
+:root[data-theme="light"] body{color:#18211d!important;background:#f4f6f7!important}
+:root[data-theme="light"] body::before{background:linear-gradient(145deg,#f8faf9 0%,#edf1f2 56%,#e9eef0 100%);filter:none}
+:root[data-theme="light"] body::after{background:transparent}
+:root[data-theme="light"] .shell>main{background:transparent}
+:root[data-theme="light"] .shell>main>header{background:rgba(255,255,255,.94)!important;border-color:#dfe5e2!important;box-shadow:0 1px 0 #dfe5e2;backdrop-filter:blur(14px)}
+:root[data-theme="light"] .shell>main>header h1{color:#14251f!important}
+:root[data-theme="light"] .shell>main>header p,
+:root[data-theme="light"] .kicker,
+:root[data-theme="light"] .planning-heading p{color:#9a712d!important}
+:root[data-theme="light"] .content{background:transparent!important}
+:root[data-theme="light"] .theme-toggle,
+:root[data-theme="light"] .global-search,
+:root[data-theme="light"] .order-search{color:#35443d!important;background:#fff!important;border-color:#d5ddd9!important;box-shadow:0 2px 8px #263b3010}
+:root[data-theme="light"] input,
+:root[data-theme="light"] textarea,
+:root[data-theme="light"] select{color:#203029!important;background-color:#fff!important;border-color:#cfd8d3!important;color-scheme:light}
+:root[data-theme="light"] input::placeholder,
+:root[data-theme="light"] textarea::placeholder{color:#89948e!important}
+:root[data-theme="light"] .global-search input,
+:root[data-theme="light"] .order-search input{color:#203029!important;background:transparent!important}
+:root[data-theme="light"] .order-filters{background:#fff!important;border-color:#d8dfdc!important;box-shadow:0 6px 22px #273b310d}
+:root[data-theme="light"] .order-filters label{color:#5f6d66!important}
+:root[data-theme="light"] .orders-page .filter-select>span{color:#5f6d66!important}
+:root[data-theme="light"] .orders-page .filter-select summary{color:#2e3e36!important;background:#fff!important;border-color:#cfd8d3!important}
+:root[data-theme="light"] .orders-page .filter-select summary::after{border-color:#69766f!important}
+:root[data-theme="light"] .orders-page .filter-select details>div{background:#fff!important;border-color:#cfd8d3!important;box-shadow:0 14px 34px #263a3026!important}
+:root[data-theme="light"] .orders-page .filter-select details button{color:#415049!important}
+:root[data-theme="light"] .orders-page .filter-select details button:hover,
+:root[data-theme="light"] .orders-page .filter-select details button:focus-visible{color:#24342d!important;background:#f6f0e3!important}
+:root[data-theme="light"] .orders-page .filter-select details button.selected{color:#72551e!important;background:#f6ecd2!important}
+:root[data-theme="light"] .order-table{background:#fff!important;border-color:#dce3df!important;box-shadow:0 8px 28px #263a300d!important}
+:root[data-theme="light"] .order-row{color:#24342d!important;background:#fff!important;border-color:#e7ece9!important}
+:root[data-theme="light"] .order-row.heading{color:#63716a!important;background:#f5f7f6!important}
+:root[data-theme="light"] .order-row>span>b,
+:root[data-theme="light"] .table-empty b{color:#21312a!important}
+:root[data-theme="light"] .order-row small,
+:root[data-theme="light"] .table-empty{color:#77837d!important}
+:root[data-theme="light"] .secondary{color:#314139!important;background:#fff!important;border-color:#cbd5d0!important}
+:root[data-theme="light"] .secondary:hover{background:#f4f7f5!important;border-color:#aebdb5!important}
+:root[data-theme="light"] .metric,
+:root[data-theme="light"] .panel,
+:root[data-theme="light"] .procurement-card,
+:root[data-theme="light"] .center-card,
+:root[data-theme="light"] .launch-items article,
+:root[data-theme="light"] .launch-history details,
+:root[data-theme="light"] .kanban-column,
+:root[data-theme="light"] .kanban-task,
+:root[data-theme="light"] .position-card,
+:root[data-theme="light"] .settings-section{color:#26362f!important;background:#fff!important;border-color:#dce3df!important;box-shadow:0 8px 26px #263a300c!important}
+:root[data-theme="light"] .modal-backdrop{background:#20302a66!important}
+:root[data-theme="light"] .task-dialog,
+:root[data-theme="light"] .order-form,
+:root[data-theme="light"] .graph-builder{color:#22322b!important;background:#fff!important;border-color:#d7dfdb!important;box-shadow:0 28px 75px #17231d35!important}
+:root[data-theme="light"] .task-dialog>header,
+:root[data-theme="light"] .task-dialog>footer,
+:root[data-theme="light"] .form-head,
+:root[data-theme="light"] .order-form footer{background:#fff!important;border-color:#dfe5e2!important}
+:root[data-theme="light"] .route-choice-menu,
+:root[data-theme="light"] .global-search>div,
+:root[data-theme="light"] .global-search ul{color:#22322b!important;background:#fff!important;border-color:#d8dfdc!important}
+:root[data-theme="light"] table{color:#24342d!important}
+:root[data-theme="light"] th{color:#66736d!important}
 
 /* окна всегда выше липкой шапки и выдвижного меню (на телефоне шапка перекрывала окно заказа) */
 .modal-backdrop{z-index:60}
@@ -65,3 +127,4 @@
 .order-form>fieldset{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:0 12px}
 .order-form input[type="checkbox"]{width:auto;height:auto}
 .procurement-add{border-radius:16px}
+

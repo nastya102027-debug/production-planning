@@ -475,6 +475,9 @@ model OrderFile {
   size Int
   sha256 String
   source String @default("1C")
+  externalId String? @unique
+  externalVersion String?
+  data Bytes?
   createdAt DateTime @default(now())
   @@unique([dealNumber, sha256])
   @@index([dealNumber, createdAt])
@@ -498,3 +501,4 @@ model RkdFile {
   @@index([orderId, createdAt])
   @@index([uploaderId])
 }
+

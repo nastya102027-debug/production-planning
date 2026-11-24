@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { OneCClient } from "./one-c-client.js";
 import { businessDays, customerOrderNumberFromOneC, mapOneCOrganization, mapOneCStatus, selectChangedOrders } from "./one-c-mapping.js";
+import { syncOneCAttachments } from "./one-c-attachments.js";
 
 const COMPLETED_STATE = "5ceff41a-ad01-11e6-95fb-005056010be4";
 type Header = { Ref_Key:string; DataVersion:string; Number:string; Date:string; СостояниеЗаказа_Key:string; ЗаказПокупателя_Key:string; Организация_Key:string; Комментарий:string; Старт:string; Финиш:string; Стоимость:number };
@@ -31,7 +32,10 @@ export async function syncOneCOrders(prisma:PrismaClient, client:OneCClient, act
   const known=await prisma.order.findMany({where:{externalSource:"1C"},select:{externalId:true,externalVersion:true,sourceCreatedAt:true}});
   const versions=new Map(known.flatMap(row=>row.externalId?[[row.externalId,row.sourceCreatedAt?row.externalVersion:null]]:[]));
   const changed=selectChangedOrders(headers,versions).slice(0,100);
-  if(!changed.length)return {scanned:headers.length,created:0,updated:0,unchanged:headers.length,files:"push" as const};
+  if(!changed.length){
+    const files=await syncOneCAttachments(prisma,client,headers);
+    return {scanned:headers.length,created:0,updated:0,unchanged:headers.length,files};
+  }
 
   const refs=changed.map(row=>row.Ref_Key);
   const customerRefs=[...new Set(changed.map(row=>row.ЗаказПокупателя_Key).filter(validGuid))];
@@ -81,5 +85,7 @@ export async function syncOneCOrders(prisma:PrismaClient, client:OneCClient, act
       await tx.auditLog.create({data:{actorId,action:"ORDER_SYNCED_FROM_1C",entityType:"Order",entityId:orderId,after:{externalId:header.Ref_Key,version:header.DataVersion,itemCount:items.length}}});
     });
   }
-  return {scanned:headers.length,created,updated,unchanged:headers.length-changed.length,files:"push" as const};
+  const files=await syncOneCAttachments(prisma,client,headers);
+  return {scanned:headers.length,created,updated,unchanged:headers.length-changed.length,files};
 }
+

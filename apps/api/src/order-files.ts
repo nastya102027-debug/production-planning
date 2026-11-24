@@ -100,6 +100,11 @@ export function orderFilesRouter(prisma: PrismaClient) {
     const order = await requireOrder(req);
     const file = await prisma.orderFile.findUnique({ where: { id: z.string().uuid().parse(req.params.fileId) } });
     if (!file || !order.deals.includes(file.dealNumber)) throw new ProductionError(404, "Файла по этому заказу нет");
+    if (file.data) {
+      res.setHeader("Content-Type", file.mime); res.setHeader("Content-Disposition", contentDisposition(file.name, file.mime));
+      res.setHeader("X-Content-Type-Options", "nosniff"); res.setHeader("Cache-Control", "private, no-cache");
+      return res.send(file.data);
+    }
     const location = path.join(orderFilesDir(), path.basename(file.stored));
     if (!await isFile(location)) throw new ProductionError(404, "Файл потерялся на диске");
     sendStored(res, location, file.name, file.mime);
@@ -147,3 +152,4 @@ export function intakeRouter(prisma: PrismaClient) {
 
   return router;
 }
+
