@@ -42,6 +42,7 @@
 :root[data-theme="light"] .orders-page .filter-select details button.selected{color:#72551e!important;background:#f6ecd2!important}
 :root[data-theme="light"] .order-table{background:#fff!important;border-color:#dce3df!important;box-shadow:0 8px 28px #263a300d!important}
 :root[data-theme="light"] .order-row{color:#24342d!important;background:#fff!important;border-color:#e7ece9!important}
+:root[data-theme="light"] .orders-page .order-row:not(.heading):hover{background:#f8faf9!important;border-color:#d4ddd8!important;box-shadow:0 10px 28px #263a3017!important}
 :root[data-theme="light"] .order-row.heading{color:#63716a!important;background:#f5f7f6!important}
 :root[data-theme="light"] .order-row>span>b,
 :root[data-theme="light"] .table-empty b{color:#21312a!important}
