@@ -65,7 +65,7 @@ export async function syncOneCAttachments(prisma: PrismaClient, client: OneCClie
   const volumeIds = [...new Set(pending.map(row => row.Том_Key).filter(id => id && id !== ZERO_GUID))];
   const volumes = await byRefs<Volume>(client, VOLUMES, "Ref_Key", volumeIds, "Ref_Key,ПолныйПутьWindows,ПолныйПутьLinux");
   const volumeMap = new Map(volumes.map(row => [row.Ref_Key, process.platform === "win32" ? row.ПолныйПутьWindows : row.ПолныйПутьLinux]));
-  let pulled = 0, skipped = changed.length - eligible.length;
+  let pulled = 0, skipped = changed.length - eligible.length, duplicates = 0;
 
   for (const row of pending) {
     const dealNumber = ownerToOrder.get(row.ВладелецФайла_Key)!;
@@ -78,6 +78,7 @@ export async function syncOneCAttachments(prisma: PrismaClient, client: OneCClie
       const sha256 = createHash("sha256").update(data).digest("hex");
       const duplicate = await prisma.orderFile.findUnique({ where: { dealNumber_sha256: { dealNumber, sha256 } } });
       const fileData = { dealNumber, name, mime, size: data.length, sha256, data, source: "1C", externalId: row.Ref_Key, externalVersion: row.DataVersion };
+      if (duplicate?.externalId && duplicate.externalId !== row.Ref_Key) { duplicates += 1; continue; }
       if (duplicate) await prisma.orderFile.update({ where: { id: duplicate.id }, data: fileData });
       else await prisma.orderFile.upsert({ where: { externalId: row.Ref_Key }, create: { ...fileData, stored: `1c-${row.Ref_Key}${chatFileExtension(name)}` }, update: fileData });
       pulled += 1;
@@ -86,6 +87,6 @@ export async function syncOneCAttachments(prisma: PrismaClient, client: OneCClie
       console.warn(`Не удалось забрать вложение 1С ${row.Ref_Key}:`, error instanceof Error ? error.message : error);
     }
   }
-  return { scanned: active.length, pulled, unchanged: active.length - changed.length, skipped, queued: eligible.length - pending.length };
+  return { scanned: active.length, pulled, unchanged: active.length - changed.length, skipped, duplicates, queued: eligible.length - pending.length };
 }
 
